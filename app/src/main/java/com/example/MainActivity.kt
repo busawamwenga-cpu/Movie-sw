@@ -1,0 +1,296 @@
+package com.example
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.model.Language
+import com.example.model.UserRole
+import com.example.ui.components.AppBottomNav
+import com.example.ui.components.AppTopBar
+import com.example.ui.components.NotificationsDialog
+import com.example.ui.components.VipUpgradeDialog
+import com.example.ui.screens.*
+import com.example.ui.theme.MovieDarkBg
+import com.example.ui.theme.MyApplicationTheme
+import com.example.viewmodel.AuthMode
+import com.example.viewmodel.MovieViewModel
+import com.example.viewmodel.ScreenState
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        setContent {
+            MyApplicationTheme {
+                MovieSwApp()
+            }
+        }
+    }
+}
+
+@Composable
+fun MovieSwApp(
+    viewModel: MovieViewModel = viewModel()
+) {
+    val language by viewModel.language.collectAsStateWithLifecycle()
+    val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
+    val authMode by viewModel.authMode.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val bottomNavTab by viewModel.bottomNavTab.collectAsStateWithLifecycle()
+    val selectedMovie by viewModel.selectedMovie.collectAsStateWithLifecycle()
+    val filteredMovies by viewModel.filteredMovies.collectAsStateWithLifecycle()
+    val allMovies by viewModel.movies.collectAsStateWithLifecycle()
+    val availableDjs by viewModel.availableDjs.collectAsStateWithLifecycle()
+    val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val selectedDj by viewModel.selectedDj.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val showVipModal by viewModel.showVipModal.collectAsStateWithLifecycle()
+    val showNotificationDialog by viewModel.showNotificationDialog.collectAsStateWithLifecycle()
+    val authError by viewModel.authError.collectAsStateWithLifecycle()
+    val snackbarMsg by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val comments by viewModel.comments.collectAsStateWithLifecycle()
+    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+    val socialLinks by viewModel.socialLinks.collectAsStateWithLifecycle()
+    val users by viewModel.users.collectAsStateWithLifecycle()
+    val sentOtpCode by viewModel.sentOtpCode.collectAsStateWithLifecycle()
+    val otpTargetEmail by viewModel.otpTargetEmail.collectAsStateWithLifecycle()
+    val sentVerifyEmailOtp by viewModel.sentVerifyEmailOtp.collectAsStateWithLifecycle()
+    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val adminUploadState by viewModel.adminUploadState.collectAsStateWithLifecycle()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(snackbarMsg) {
+        snackbarMsg?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearSnackbar()
+        }
+    }
+
+    // Modal dialogs
+    if (showVipModal) {
+        VipUpgradeDialog(
+            language = language,
+            currentUser = currentUser,
+            onDismiss = { viewModel.showVipModal(false) },
+            onSelectPlan = { tier -> viewModel.upgradeVip(tier) }
+        )
+    }
+
+    if (showNotificationDialog) {
+        NotificationsDialog(
+            language = language,
+            notifications = notifications,
+            onDismiss = { viewModel.showNotifications(false) }
+        )
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MovieDarkBg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            if (currentScreen == ScreenState.MAIN_VIEWER) {
+                AppTopBar(
+                    language = language,
+                    currentUser = currentUser,
+                    unreadNotificationsCount = notifications.size,
+                    onLanguageToggle = { viewModel.toggleLanguage() },
+                    onNotificationsClick = { viewModel.showNotifications(true) },
+                    onVipClick = { viewModel.showVipModal(true) },
+                    onAdminClick = { viewModel.navigateTo(ScreenState.ADMIN_DASHBOARD) }
+                )
+            }
+        },
+        bottomBar = {
+            if (currentScreen == ScreenState.MAIN_VIEWER) {
+                AppBottomNav(
+                    selectedTab = bottomNavTab,
+                    language = language,
+                    onTabSelected = { viewModel.setBottomNavTab(it) }
+                )
+            }
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(MovieDarkBg)
+        ) {
+            when (currentScreen) {
+                ScreenState.SPLASH -> {
+                    SplashScreen(
+                        language = language,
+                        onFinish = { viewModel.navigateTo(ScreenState.ONBOARDING) }
+                    )
+                }
+
+                ScreenState.ONBOARDING -> {
+                    OnboardingScreen(
+                        language = language,
+                        onLanguageToggle = { viewModel.toggleLanguage() },
+                        onFinish = { viewModel.navigateTo(ScreenState.BIENVENUE) }
+                    )
+                }
+
+                ScreenState.BIENVENUE -> {
+                    BienvenueScreen(
+                        language = language,
+                        onLanguageToggle = { viewModel.toggleLanguage() },
+                        onSignUpClick = { viewModel.setAuthMode(AuthMode.SIGN_UP) },
+                        onSignInClick = { viewModel.setAuthMode(AuthMode.SIGN_IN) },
+                        onAdminClick = { viewModel.setAuthMode(AuthMode.ADMIN_LOGIN) }
+                    )
+                }
+
+                ScreenState.AUTH -> {
+                    BackHandler {
+                        viewModel.navigateTo(ScreenState.BIENVENUE)
+                    }
+                    AuthScreen(
+                        language = language,
+                        authMode = authMode,
+                        errorMessage = authError,
+                        sentOtpCode = sentOtpCode,
+                        otpTargetEmail = otpTargetEmail,
+                        sentVerifyEmailOtp = sentVerifyEmailOtp,
+                        onSwitchMode = { viewModel.setAuthMode(it) },
+                        onBack = { viewModel.navigateTo(ScreenState.BIENVENUE) },
+                        onLogin = { id, pass -> viewModel.login(id, pass) },
+                        onRegister = { name, country, email, pass, ageTier, isVerified ->
+                            viewModel.register(name, country, email, pass, ageTier, isVerified)
+                        },
+                        onSendOtp = { viewModel.sendPasswordResetOtp(it) },
+                        onResetPassword = { email, code, pass ->
+                            viewModel.verifyOtpAndResetPassword(email, code, pass)
+                        },
+                        onSendVerifyEmailOtp = { viewModel.sendEmailVerificationOtp(it) }
+                    )
+                }
+
+                ScreenState.MAIN_VIEWER -> {
+                    when (bottomNavTab) {
+                        "home" -> HomeScreen(
+                            language = language,
+                            currentUser = currentUser,
+                            movies = filteredMovies,
+                            availableDjs = availableDjs,
+                            selectedCategory = selectedCategory,
+                            selectedDj = selectedDj,
+                            onSelectCategory = { viewModel.setCategory(it) },
+                            onSelectDj = { viewModel.setDj(it) },
+                            onMovieClick = { viewModel.openMovie(it) },
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onVipUpgradeClick = { viewModel.showVipModal(true) }
+                        )
+
+                        "explore" -> ExploreScreen(
+                            language = language,
+                            currentUser = currentUser,
+                            movies = filteredMovies,
+                            availableDjs = availableDjs,
+                            selectedCategory = selectedCategory,
+                            selectedDj = selectedDj,
+                            searchQuery = searchQuery,
+                            onSearchChange = { viewModel.setSearchQuery(it) },
+                            onSelectCategory = { viewModel.setCategory(it) },
+                            onSelectDj = { viewModel.setDj(it) },
+                            onMovieClick = { viewModel.openMovie(it) }
+                        )
+
+                        "album" -> AlbumScreen(
+                            language = language,
+                            currentUser = currentUser,
+                            allMovies = allMovies,
+                            activeDownloads = activeDownloads,
+                            onMovieClick = { viewModel.openMovie(it) },
+                            onRemoveFavorite = { viewModel.toggleFavorite(it) },
+                            onVipUpgradeClick = { viewModel.showVipModal(true) }
+                        )
+
+                        "account" -> AccountScreen(
+                            language = language,
+                            currentUser = currentUser,
+                            socialLinks = socialLinks,
+                            sentVerifyEmailOtp = sentVerifyEmailOtp,
+                            onLanguageToggle = { viewModel.toggleLanguage() },
+                            onSelectQuality = { viewModel.updateQuality(it) },
+                            onVipUpgradeClick = { viewModel.showVipModal(true) },
+                            onAdminClick = { viewModel.navigateTo(ScreenState.ADMIN_DASHBOARD) },
+                            onLogout = { viewModel.logout() },
+                            onSendEmailVerification = { viewModel.sendEmailVerificationOtp(it) },
+                            onVerifyEmail = { viewModel.verifyCurrentUserEmail(it) }
+                        )
+                    }
+                }
+
+                ScreenState.VIDEO_PLAYER -> {
+                    selectedMovie?.let { movie ->
+                        BackHandler {
+                            viewModel.closePlayer()
+                        }
+                        VideoPlayerScreen(
+                            movie = movie,
+                            language = language,
+                            currentUser = currentUser,
+                            comments = comments,
+                            activeDownloads = activeDownloads,
+                            onBack = { viewModel.closePlayer() },
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onDownload = { viewModel.downloadMovie(it) },
+                            onPostComment = { text, rating -> viewModel.addComment(movie.id, text, rating) },
+                            onVipUpgradeClick = { viewModel.showVipModal(true) }
+                        )
+                    }
+                }
+
+                ScreenState.ADMIN_DASHBOARD -> {
+                    // SECURITY CHECK: Mutumiyaji wa kawaida aruusiwi ku weka movie atakama awe na vip pro max ila admin pekeyake!
+                    if (currentUser?.role != UserRole.ADMIN) {
+                        LaunchedEffect(Unit) {
+                            viewModel.showSnackbar(
+                                if (language == Language.SW) "Ruhusa imekataliwa: Mtumiaji wa kawaida haruhusiwi kuingia hapa!" 
+                                else "Accès refusé : Seul l'administrateur peut accéder ici !"
+                            )
+                            viewModel.navigateTo(if (currentUser != null) ScreenState.MAIN_VIEWER else ScreenState.BIENVENUE)
+                        }
+                    } else {
+                        BackHandler {
+                            viewModel.navigateTo(ScreenState.MAIN_VIEWER)
+                        }
+                        AdminDashboardScreen(
+                            language = language,
+                            users = users,
+                            movies = allMovies,
+                            socialLinks = socialLinks,
+                            adminUploadState = adminUploadState,
+                            onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount ->
+                                viewModel.adminAddMovie(title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount)
+                            },
+                            onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount ->
+                                viewModel.adminStartUploadMovie(title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount)
+                            },
+                            onDeleteMovie = { movieId -> viewModel.adminDeleteMovie(movieId) },
+                            onChangeUserVip = { userId, tier -> viewModel.adminChangeUserVip(userId, tier) },
+                            onDeleteUser = { userId -> viewModel.adminDeleteUser(userId) },
+                            onBroadcastNotif = { tSw, tFr, mSw, mFr -> viewModel.adminBroadcast(tSw, tFr, mSw, mFr) },
+                            onLanguageToggle = { viewModel.toggleLanguage() },
+                            onExitAdmin = { viewModel.navigateTo(ScreenState.MAIN_VIEWER) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
