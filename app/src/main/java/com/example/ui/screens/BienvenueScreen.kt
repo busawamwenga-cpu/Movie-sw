@@ -32,8 +32,7 @@ fun BienvenueScreen(
     language: Language,
     onLanguageToggle: () -> Unit,
     onSignUpClick: () -> Unit,
-    onSignInClick: () -> Unit,
-    onAdminClick: () -> Unit
+    onSignInClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -194,32 +193,6 @@ fun BienvenueScreen(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = MovieTextPrimary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Admin Access Link
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .testTag("btn_admin_portal_link")
-                    .clickable { onAdminClick() }
-                    .padding(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AdminPanelSettings,
-                    contentDescription = null,
-                    tint = MovieGoldLight,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = Strings.btnAdminAccess(language),
-                    color = MovieGoldLight,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
                 )
             }
         }

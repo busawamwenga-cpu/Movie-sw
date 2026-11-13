@@ -121,4 +121,44 @@ object LocalVideoFileHelper {
             null
         }
     }
+
+    suspend fun copyApkToReleaseStorage(
+        context: Context,
+        sourceUri: Uri,
+        fileName: String,
+        expectedTotalBytes: Long,
+        onProgress: (copiedBytes: Long, totalBytes: Long, percentage: Int) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "apk_releases")
+        if (!dir.exists()) dir.mkdirs()
+
+        val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .let { if (it.endsWith(".apk", ignoreCase = true)) it else "$it.apk" }
+        val destFile = File(dir, "${System.currentTimeMillis()}_$safeName")
+
+        val resolver = context.contentResolver
+        val total = if (expectedTotalBytes > 0L) expectedTotalBytes else (15L * 1024L * 1024L)
+        var copied = 0L
+
+        resolver.openInputStream(sourceUri)?.use { input ->
+            FileOutputStream(destFile).use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var read: Int
+                var lastReportedPct = -1
+                while (input.read(buffer).also { read = it } != -1) {
+                    output.write(buffer, 0, read)
+                    copied += read
+                    val pct = ((copied * 100L) / total.coerceAtLeast(copied)).toInt().coerceIn(1, 99)
+                    if (pct != lastReportedPct) {
+                        lastReportedPct = pct
+                        onProgress(copied, total.coerceAtLeast(copied), pct)
+                    }
+                }
+                output.flush()
+            }
+        } ?: throw IllegalStateException("Imeshindwa kusoma faili la APK")
+
+        onProgress(copied, copied.coerceAtLeast(1L), 100)
+        Uri.fromFile(destFile).toString()
+    }
 }

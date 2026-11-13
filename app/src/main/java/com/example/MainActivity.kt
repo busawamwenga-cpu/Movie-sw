@@ -18,10 +18,12 @@ import com.example.model.UserRole
 import com.example.ui.components.AppBottomNav
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.NotificationsDialog
+import com.example.ui.components.OfflineGateScreen
 import com.example.ui.components.VipUpgradeDialog
 import com.example.ui.screens.*
 import com.example.ui.theme.MovieDarkBg
 import com.example.ui.theme.MyApplicationTheme
+import com.example.util.NetworkMonitor
 import com.example.viewmodel.AuthMode
 import com.example.viewmodel.MovieViewModel
 import com.example.viewmodel.ScreenState
@@ -74,6 +76,15 @@ fun MovieSwApp(
     val isCatalogLoading by viewModel.isCatalogLoading.collectAsStateWithLifecycle()
     val isActionLoading by viewModel.isActionLoading.collectAsStateWithLifecycle()
     val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    val publishedAppUpdate by viewModel.publishedAppUpdate.collectAsStateWithLifecycle()
+
+    var networkRetryTick by remember { mutableIntStateOf(0) }
+    val observedOnline by NetworkMonitor.observeIsOnline(context)
+        .collectAsStateWithLifecycle(initialValue = NetworkMonitor.isInternetAvailable(context))
+    var isOnline by remember { mutableStateOf(NetworkMonitor.isInternetAvailable(context)) }
+    LaunchedEffect(observedOnline, networkRetryTick) {
+        isOnline = observedOnline || NetworkMonitor.isInternetAvailable(context)
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -156,8 +167,7 @@ fun MovieSwApp(
                         language = language,
                         onLanguageToggle = { viewModel.toggleLanguage() },
                         onSignUpClick = { viewModel.setAuthMode(AuthMode.SIGN_UP) },
-                        onSignInClick = { viewModel.setAuthMode(AuthMode.SIGN_IN) },
-                        onAdminClick = { viewModel.setAuthMode(AuthMode.ADMIN_LOGIN) }
+                        onSignInClick = { viewModel.setAuthMode(AuthMode.SIGN_IN) }
                     )
                 }
 
@@ -245,7 +255,7 @@ fun MovieSwApp(
                             onLogout = { viewModel.logout() },
                             onSendEmailVerification = { viewModel.sendEmailVerificationOtp(it) },
                             onVerifyEmail = { viewModel.verifyCurrentUserEmail(it) },
-                            onCheckForUpdates = { viewModel.checkForAppUpdates() },
+                            onCheckForUpdates = { viewModel.checkForAppUpdates(context) },
                             onDownloadAndInstallUpdate = { info -> viewModel.startAppUpdateDownload(context, info) },
                             onLaunchApkInstall = { file -> com.example.util.AppUpdateManager.launchApkInstaller(context, file) }
                         )
@@ -292,7 +302,21 @@ fun MovieSwApp(
                             movies = allMovies,
                             socialLinks = socialLinks,
                             adminUploadState = adminUploadState,
+                            publishedAppUpdate = publishedAppUpdate,
                             isActionLoading = isActionLoading,
+                            onPublishApkUpdate = { uri, fileName, sizeMb, directUrl, vCode, vName, notes ->
+                                viewModel.adminPublishApkUpdate(
+                                    context = context,
+                                    apkUri = uri,
+                                    fileName = fileName,
+                                    expectedSizeMb = sizeMb,
+                                    directApkUrl = directUrl,
+                                    versionCode = vCode,
+                                    versionName = vName,
+                                    releaseNotes = notes
+                                )
+                            },
+                            onClearPublishedApkUpdate = { viewModel.adminClearPublishedApkUpdate() },
                             onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount, sendNotif ->
                                 viewModel.adminAddMovie(
                                     title = title,
@@ -439,5 +463,16 @@ fun MovieSwApp(
                 }
             }
         }
+    }
+
+    // Strict online enforcement: block offline app usage once Splash completes
+    if (!isOnline && currentScreen != ScreenState.SPLASH) {
+        OfflineGateScreen(
+            language = language,
+            onRetry = {
+                isOnline = NetworkMonitor.isInternetAvailable(context)
+                networkRetryTick++
+            }
+        )
     }
 }

@@ -7,6 +7,8 @@ import com.example.data.local.EntityMappers.toDomain
 import com.example.data.local.EntityMappers.toEntity
 import com.example.data.local.MovieSwDatabase
 import com.example.model.*
+import com.example.util.AppUpdateManager
+import com.example.util.RemoteUpdateInfo
 import com.example.util.SecurityUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,12 @@ object MovieRepository {
 
     private val _persistedDownloads = MutableStateFlow<Map<String, DownloadTask>>(emptyMap())
     val persistedDownloads: StateFlow<Map<String, DownloadTask>> = _persistedDownloads.asStateFlow()
+
+    @Volatile
+    private var appContext: Context? = null
+
+    private val _publishedAppUpdate = MutableStateFlow<RemoteUpdateInfo?>(null)
+    val publishedAppUpdate: StateFlow<RemoteUpdateInfo?> = _publishedAppUpdate.asStateFlow()
 
     // Salt and hash for default admin and demo user
     private val adminSalt = SecurityUtil.generateSalt()
@@ -390,6 +398,11 @@ object MovieRepository {
         if (database != null) return
         synchronized(this) {
             if (database != null) return
+            appContext = context.applicationContext
+            val prefs = context.applicationContext.getSharedPreferences("moviesw_admin_update_prefs", Context.MODE_PRIVATE)
+            prefs.getString("published_update_json", null)?.let { raw ->
+                _publishedAppUpdate.value = AppUpdateManager.decodeStoredUpdateJson(raw)
+            }
             val db = MovieSwDatabase.getInstance(context)
             database = db
             ioScope.launch {
@@ -786,5 +799,19 @@ object MovieRepository {
                 db.notificationDao().upsertNotification(notif.toEntity(sortOrder = System.currentTimeMillis()))
             }
         }
+    }
+
+    fun publishAppUpdate(info: RemoteUpdateInfo) {
+        _publishedAppUpdate.value = info
+        val ctx = appContext ?: return
+        val prefs = ctx.getSharedPreferences("moviesw_admin_update_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("published_update_json", AppUpdateManager.encodeUpdateJson(info)).apply()
+    }
+
+    fun clearPublishedAppUpdate() {
+        _publishedAppUpdate.value = null
+        val ctx = appContext ?: return
+        val prefs = ctx.getSharedPreferences("moviesw_admin_update_prefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("published_update_json").apply()
     }
 }

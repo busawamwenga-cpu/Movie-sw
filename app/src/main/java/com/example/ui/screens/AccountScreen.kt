@@ -854,6 +854,14 @@ private fun AppUpdateSectionCard(
                                 color = MovieGoldLight,
                                 modifier = Modifier.testTag("text_new_version_available")
                             )
+                            if (appUpdateState.info.releaseNotes.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = appUpdateState.info.releaseNotes,
+                                    fontSize = 11.sp,
+                                    color = MovieTextSecondary
+                                )
+                            }
                             Spacer(modifier = Modifier.height(10.dp))
                             FilledTonalButton(
                                 onClick = { onDownloadAndInstallUpdate(appUpdateState.info) },

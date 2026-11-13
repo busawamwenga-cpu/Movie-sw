@@ -291,4 +291,21 @@ class ExampleUnitTest {
             com.example.util.AppUpdateManager.parseUpdateJson("""{"versionCode": 2}""")
         }
     }
+
+    @Test
+    fun testAdminPublishedApkUpdateSerialization() {
+        val adminUpdate = com.example.util.RemoteUpdateInfo(
+            versionCode = 99,
+            versionName = "9.9",
+            apkUrl = "file:///data/user/0/com.example/files/apk_releases/release.apk",
+            releaseNotes = "Sasisho jipya la Admin"
+        )
+        val encoded = com.example.util.AppUpdateManager.encodeUpdateJson(adminUpdate)
+        val decoded = com.example.util.AppUpdateManager.decodeStoredUpdateJson(encoded)
+        assertNotNull(decoded)
+        assertEquals(99, decoded?.versionCode)
+        assertEquals("9.9", decoded?.versionName)
+        assertEquals(adminUpdate.apkUrl, decoded?.apkUrl)
+        assertEquals("Sasisho jipya la Admin", decoded?.releaseNotes)
+    }
 }

@@ -11,6 +11,7 @@ import com.example.util.AppNotificationHelper
 import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateUiState
 import com.example.util.LocalVideoFileHelper
+import com.example.util.NetworkMonitor
 import com.example.util.RemoteUpdateInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -111,6 +112,8 @@ class MovieViewModel : ViewModel() {
     // In-App APK Self-Update State
     private val _appUpdateState = MutableStateFlow<AppUpdateUiState>(AppUpdateUiState.Idle)
     val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
+
+    val publishedAppUpdate: StateFlow<RemoteUpdateInfo?> = MovieRepository.publishedAppUpdate
 
     val movies = MovieRepository.movies
     val users = MovieRepository.users
@@ -1050,20 +1053,29 @@ class MovieViewModel : ViewModel() {
         }
     }
 
-    fun checkForAppUpdates() {
+    fun checkForAppUpdates(context: Context? = null) {
         val current = _appUpdateState.value
         if (current is AppUpdateUiState.Checking || current is AppUpdateUiState.Downloading) return
 
         viewModelScope.launch {
             _appUpdateState.value = AppUpdateUiState.Checking
-            try {
-                val info = AppUpdateManager.fetchUpdateInfo()
-                if (AppUpdateManager.isUpdateAvailable(info.versionCode, BuildConfig.VERSION_CODE)) {
-                    _appUpdateState.value = AppUpdateUiState.UpdateAvailable(info)
-                } else {
-                    _appUpdateState.value = AppUpdateUiState.UpToDate
-                }
-            } catch (_: Exception) {
+            if (context != null && !NetworkMonitor.isInternetAvailable(context)) {
+                _appUpdateState.value = AppUpdateUiState.Error(AppUpdateManager.ERROR_CONNECTION_MSG)
+                return@launch
+            }
+
+            val adminPublished = MovieRepository.publishedAppUpdate.value
+            val remoteResult = runCatching { AppUpdateManager.fetchUpdateInfo() }
+
+            val candidates = listOfNotNull(adminPublished, remoteResult.getOrNull())
+                .filter { AppUpdateManager.isUpdateAvailable(it.versionCode, BuildConfig.VERSION_CODE) }
+            val newestUpdate = candidates.maxByOrNull { it.versionCode }
+
+            if (newestUpdate != null) {
+                _appUpdateState.value = AppUpdateUiState.UpdateAvailable(newestUpdate)
+            } else if (remoteResult.isSuccess) {
+                _appUpdateState.value = AppUpdateUiState.UpToDate
+            } else {
                 _appUpdateState.value = AppUpdateUiState.Error(AppUpdateManager.ERROR_CONNECTION_MSG)
             }
         }
@@ -1095,5 +1107,127 @@ class MovieViewModel : ViewModel() {
                 )
             }
         }
+    }
+
+    fun adminPublishApkUpdate(
+        context: Context,
+        apkUri: Uri?,
+        fileName: String,
+        expectedSizeMb: Float,
+        directApkUrl: String,
+        versionCode: Int,
+        versionName: String,
+        releaseNotes: String
+    ) {
+        if (_currentUser.value?.role != UserRole.ADMIN) return
+        if (versionCode <= 0 || versionName.isBlank()) {
+            _snackbarMessage.value = if (_language.value == Language.SW)
+                "Weka versionName na versionCode sahihi (mfano 2.0 na 2)."
+            else
+                "Veuillez entrer un versionName et un versionCode valides."
+            return
+        }
+
+        val cleanedUrl = directApkUrl.trim()
+        if (apkUri == null && !(cleanedUrl.startsWith("http://") || cleanedUrl.startsWith("https://"))) {
+            _snackbarMessage.value = if (_language.value == Language.SW)
+                "Chagua faili la .apk kutoka kwenye simu au weka kiungo cha APK."
+            else
+                "Sélectionnez un fichier .apk ou saisissez une URL valide."
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val finalApkLocation = if (apkUri != null) {
+                    val safeTotalMb = expectedSizeMb.coerceAtLeast(1f)
+                    val expectedBytes = (safeTotalMb * 1024L * 1024L).toLong()
+                    _adminUploadState.value = AdminUploadState(
+                        isUploading = true,
+                        progress = 0.02f,
+                        percentage = 2,
+                        mbUploaded = 0f,
+                        totalMb = safeTotalMb,
+                        speed = "Inasoma APK...",
+                        fileName = fileName,
+                        stageText = if (_language.value == Language.SW) "Inaandaa faili la APK: $fileName" else "Préparation de l'APK : $fileName"
+                    )
+                    val startTime = System.currentTimeMillis()
+                    LocalVideoFileHelper.copyApkToReleaseStorage(
+                        context = context,
+                        sourceUri = apkUri,
+                        fileName = fileName,
+                        expectedTotalBytes = expectedBytes
+                    ) { copiedBytes, totalBytes, pct ->
+                        val elapsed = ((System.currentTimeMillis() - startTime) / 1000f).coerceAtLeast(0.2f)
+                        val mb = copiedBytes / (1024f * 1024f)
+                        val tot = totalBytes / (1024f * 1024f)
+                        _adminUploadState.value = AdminUploadState(
+                            isUploading = true,
+                            progress = (pct / 100f).coerceIn(0f, 1f),
+                            percentage = pct,
+                            mbUploaded = mb,
+                            totalMb = tot.coerceAtLeast(mb),
+                            speed = "%.1f MB/s".format(mb / elapsed),
+                            fileName = fileName,
+                            stageText = if (_language.value == Language.SW)
+                                "Inatuma APK kwenye sehemu ya Mise à jour ($pct%)..."
+                            else
+                                "Publication de la mise à jour APK ($pct%)..."
+                        )
+                    }
+                } else {
+                    cleanedUrl
+                }
+
+                val info = RemoteUpdateInfo(
+                    versionCode = versionCode,
+                    versionName = versionName.trim(),
+                    apkUrl = finalApkLocation,
+                    releaseNotes = releaseNotes.trim()
+                )
+                MovieRepository.publishAppUpdate(info)
+
+                _adminUploadState.value = AdminUploadState(
+                    isUploading = false,
+                    progress = 1f,
+                    percentage = 100,
+                    fileName = fileName,
+                    stageText = if (_language.value == Language.SW) "Sasisho la APK limetumwa!" else "Mise à jour publiée !"
+                )
+
+                val notifTitleSw = "Sasisho Jipya la App: v${info.versionName}"
+                val notifTitleFr = "Nouvelle mise à jour : v${info.versionName}"
+                val notifMsgSw = "Toleo jipya la Movie SW (${info.versionName}) lipo tayari! Fungua Akaunti kisha bonyeza 'Vérifier les mises à jour' ili kupakua."
+                val notifMsgFr = "La version ${info.versionName} est disponible ! Ouvrez Compte > Vérifier les mises à jour."
+                MovieRepository.broadcastNotification(notifTitleSw, notifTitleFr, notifMsgSw, notifMsgFr)
+                AppNotificationHelper.showSystemNotification(
+                    context,
+                    if (_language.value == Language.SW) notifTitleSw else notifTitleFr,
+                    if (_language.value == Language.SW) notifMsgSw else notifMsgFr
+                )
+
+                _snackbarMessage.value = if (_language.value == Language.SW)
+                    "APK mpya (${info.versionName}) imetumwa kwenye sehemu ya Mise à jour!"
+                else
+                    "Mise à jour APK (${info.versionName}) publiée dans la section Compte !"
+            } catch (e: Exception) {
+                _adminUploadState.value = AdminUploadState(isUploading = false)
+                _snackbarMessage.value = if (_language.value == Language.SW)
+                    "Hitilafu kutuma APK: ${e.message ?: "Jaribu tena"}"
+                else
+                    "Erreur lors de la publication : ${e.message ?: "Réessayez"}"
+            }
+        }
+    }
+
+    fun adminClearPublishedApkUpdate() {
+        if (_currentUser.value?.role != UserRole.ADMIN) return
+        MovieRepository.clearPublishedAppUpdate()
+        _appUpdateState.value = AppUpdateUiState.Idle
+        _snackbarMessage.value = if (_language.value == Language.SW)
+            "Sasisho la APK limeondolewa."
+        else
+            "Mise à jour APK supprimée."
     }
 }

@@ -71,7 +71,7 @@ fun AuthScreen(
     var newPasswordVisible by remember { mutableStateOf(false) }
 
     val isRegister = authMode == AuthMode.SIGN_UP
-    val isAdmin = authMode == AuthMode.ADMIN_LOGIN
+    val isAdmin = false
     val isForgotPassword = authMode == AuthMode.FORGOT_PASSWORD
 
     Box(
@@ -833,76 +833,20 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(18.dp))
 
                         // Switch link
-                        if (!isAdmin) {
-                            Text(
-                                text = if (isRegister) Strings.switchHaveAccount(language) else Strings.switchNeedAccount(language),
-                                color = MovieGoldLight,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSwitchMode(if (isRegister) AuthMode.SIGN_IN else AuthMode.SIGN_UP)
-                                    }
-                                    .padding(vertical = 6.dp)
-                                    .testTag("auth_switch_mode_link")
-                            )
-                        } else {
-                            Text(
-                                text = if (language == Language.SW) "Rudi kwenye Kuingia Kawaida" else "Retour à la connexion standard",
-                                color = MovieTextSecondary,
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSwitchMode(AuthMode.SIGN_IN) }
-                                    .padding(vertical = 6.dp)
-                            )
-                        }
-
-                        if (!isAdmin && !isRegister) {
-                            Spacer(modifier = Modifier.height(20.dp))
-
-                            HorizontalDivider(color = MovieDivider)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = if (language == Language.SW) "Ufikiaji wa Haraka (Mtazamaji / DJ):" else "Accès Rapide (Spectateur / DJ) :",
-                                fontSize = 11.sp,
-                                color = MovieTextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        onSwitchMode(AuthMode.SIGN_IN)
-                                        identifier = "viewer@moviesw.com"
-                                        password = "viewer1234"
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Viewer Demo", fontSize = 11.sp, color = MovieTextPrimary)
+                        Text(
+                            text = if (isRegister) Strings.switchHaveAccount(language) else Strings.switchNeedAccount(language),
+                            color = MovieGoldLight,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSwitchMode(if (isRegister) AuthMode.SIGN_IN else AuthMode.SIGN_UP)
                                 }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        onSwitchMode(AuthMode.SIGN_IN)
-                                        identifier = "djafro@moviesw.com"
-                                        password = "viewer1234"
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
-                                ) {
-                                    Text("DJ Demo", fontSize = 11.sp, color = MovieBlueVip)
-                                }
-                            }
-                        }
+                                .padding(vertical = 6.dp)
+                                .testTag("auth_switch_mode_link")
+                        )
                     }
                 }
             }

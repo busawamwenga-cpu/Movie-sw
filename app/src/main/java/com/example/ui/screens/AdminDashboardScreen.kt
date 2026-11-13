@@ -33,13 +33,17 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import coil.compose.AsyncImage
+import com.example.BuildConfig
 import com.example.data.MovieRepository
 import com.example.model.*
 import com.example.ui.theme.*
 import com.example.util.AppNotificationHelper
 import com.example.util.LocalVideoFileHelper
 import com.example.util.PickedMediaInfo
+import com.example.util.RemoteUpdateInfo
 import com.example.util.Strings
 
 @Composable
@@ -49,10 +53,13 @@ fun AdminDashboardScreen(
     movies: List<MovieItem>,
     socialLinks: List<SocialLink>,
     adminUploadState: AdminUploadState,
+    publishedAppUpdate: RemoteUpdateInfo? = null,
     isActionLoading: Boolean = false,
     onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int, Boolean) -> Unit,
     onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int, Boolean) -> Unit,
     onImportPickedVideo: (Uri, String, Float, Uri?, String, MovieCategory, String, String, String, String?, Boolean, Boolean, Int, Boolean) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
+    onPublishApkUpdate: (Uri?, String, Float, String, Int, String, String) -> Unit = { _, _, _, _, _, _, _ -> },
+    onClearPublishedApkUpdate: () -> Unit = {},
     onDeleteMovie: (String) -> Unit,
     onChangeUserVip: (String, VipTier) -> Unit,
     onDeleteUser: (String) -> Unit,
@@ -64,7 +71,7 @@ fun AdminDashboardScreen(
     onLanguageToggle: () -> Unit,
     onExitAdmin: () -> Unit
 ) {
-    var adminTab by remember { mutableIntStateOf(0) } // 0: Publish, 1: Arifa & Mitandao, 2: Manage Movies, 3: Customers, 4: Ma-DJ & Access, 5: Analytics
+    var adminTab by remember { mutableIntStateOf(0) } // 0: Publish, 1: Arifa, 2: Mise à jour APK, 3: Manage Movies, 4: Customers, 5: Ma-DJ & Access, 6: Analytics
 
     Box(
         modifier = Modifier
@@ -200,7 +207,7 @@ fun AdminDashboardScreen(
                     onClick = { adminTab = 2 },
                     text = {
                         Text(
-                            text = "${Strings.tabManageMovies(language)} (${movies.size})",
+                            text = if (language == Language.SW) "Mise à jour APK" else "Mise à jour APK",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 2) MovieGold else MovieTextSecondary
@@ -212,35 +219,47 @@ fun AdminDashboardScreen(
                     onClick = { adminTab = 3 },
                     text = {
                         Text(
-                            text = "${Strings.tabCustomers(language)} (${users.size})",
+                            text = "${Strings.tabManageMovies(language)} (${movies.size})",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 3) MovieGold else MovieTextSecondary
                         )
                     }
                 )
-                val djCount = remember(users) { users.count { it.role == UserRole.DJ } }
                 Tab(
                     selected = adminTab == 4,
                     onClick = { adminTab = 4 },
                     text = {
                         Text(
-                            text = if (language == Language.SW) "Ma-DJ & Access ($djCount)" else "DJs & Accès ($djCount)",
+                            text = "${Strings.tabCustomers(language)} (${users.size})",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 4) MovieGold else MovieTextSecondary
                         )
                     }
                 )
+                val djCount = remember(users) { users.count { it.role == UserRole.DJ } }
                 Tab(
                     selected = adminTab == 5,
                     onClick = { adminTab = 5 },
                     text = {
                         Text(
-                            text = Strings.tabStats(language),
+                            text = if (language == Language.SW) "Ma-DJ & Access ($djCount)" else "DJs & Accès ($djCount)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 5) MovieGold else MovieTextSecondary
+                        )
+                    }
+                )
+                Tab(
+                    selected = adminTab == 6,
+                    onClick = { adminTab = 6 },
+                    text = {
+                        Text(
+                            text = Strings.tabStats(language),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (adminTab == 6) MovieGold else MovieTextSecondary
                         )
                     }
                 )
@@ -256,10 +275,11 @@ fun AdminDashboardScreen(
                 when (adminTab) {
                     0 -> AdminPublishTab(language, adminUploadState, onAddMovie, onStartUploadMovie, onImportPickedVideo)
                     1 -> AdminSocialAndNotifsTab(language, socialLinks, isActionLoading, onBroadcastNotif)
-                    2 -> AdminManageMoviesTab(language, movies, onDeleteMovie)
-                    3 -> AdminCustomersTab(language, users, onChangeUserVip, onCancelUserVip, onRenewUserVip, onDeleteUser)
-                    4 -> AdminDjAccountsTab(language, users, onCreateDjAccount, onToggleDjAccess, onDeleteUser)
-                    5 -> AdminAnalyticsTab(language, movies)
+                    2 -> AdminAppUpdateTab(language, adminUploadState, publishedAppUpdate, onPublishApkUpdate, onClearPublishedApkUpdate)
+                    3 -> AdminManageMoviesTab(language, movies, onDeleteMovie)
+                    4 -> AdminCustomersTab(language, users, onChangeUserVip, onCancelUserVip, onRenewUserVip, onDeleteUser)
+                    5 -> AdminDjAccountsTab(language, users, onCreateDjAccount, onToggleDjAccess, onDeleteUser)
+                    6 -> AdminAnalyticsTab(language, movies)
                 }
             }
         }
@@ -2028,3 +2048,501 @@ private fun AdminSocialAndNotifsTab(
         }
     }
 }
+
+// 5. Kutuma Sasisho Jipya la APK (Mise à jour APK -> Compte)
+@Composable
+private fun AdminAppUpdateTab(
+    language: Language,
+    uploadState: AdminUploadState,
+    publishedAppUpdate: RemoteUpdateInfo?,
+    onPublishApkUpdate: (Uri?, String, Float, String, Int, String, String) -> Unit,
+    onClearPublishedApkUpdate: () -> Unit
+) {
+    val context = LocalContext.current
+    var sourceMode by remember { mutableIntStateOf(0) } // 0: Faili ya .apk kwenye simu, 1: URL ya APK
+    var pickedApk by remember { mutableStateOf<PickedMediaInfo?>(null) }
+    var directApkUrl by remember { mutableStateOf("") }
+    var versionName by remember { mutableStateOf("2.0") }
+    var versionCodeText by remember { mutableStateOf((BuildConfig.VERSION_CODE + 1).toString()) }
+    var releaseNotes by remember { mutableStateOf("") }
+
+    val apkPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pickedApk = LocalVideoFileHelper.queryPickedFile(context, uri)
+        }
+    }
+
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp)
+    ) {
+        Text(
+            text = if (language == Language.SW)
+                "Tuma Toleo Jipya la APK (Mise à jour)"
+            else
+                "Publier une Nouvelle Version APK",
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            color = MovieGold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = if (language == Language.SW)
+                "Faili au kiungo utakachotuma hapa kitaonekana moja kwa moja kwenye sehemu ya Akaunti (Mise à jour) ili watumiaji wote wapakue APK mpya."
+            else
+                "L'APK publié ici apparaît directement dans Compte > Vérifier les mises à jour pour permettre le téléchargement aux utilisateurs.",
+            fontSize = 12.sp,
+            color = MovieTextSecondary
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Installed app version card
+        Surface(
+            color = MovieSurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Verified, contentDescription = null, tint = MovieGoldLight, modifier = Modifier.size(18.dp))
+                    Text(
+                        text = if (language == Language.SW) "Toleo la Sasa Kwenye App:" else "Version Actuelle :",
+                        fontSize = 12.sp,
+                        color = MovieTextSecondary
+                    )
+                }
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME} (Code ${BuildConfig.VERSION_CODE})",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MovieGold
+                )
+            }
+        }
+
+        // Active published update status card
+        if (publishedAppUpdate != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MovieGreenSuccess.copy(alpha = 0.14f)),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MovieGreenSuccess),
+                modifier = Modifier.fillMaxWidth().testTag("admin_active_update_card")
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MovieGreenSuccess, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(
+                                    text = if (language == Language.SW)
+                                        "Sasisho Linapatikana Kwenye Akaunti"
+                                    else
+                                        "Mise à jour Active dans Compte",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MovieGreenSuccess
+                                )
+                                Text(
+                                    text = "v${publishedAppUpdate.versionName} (Code ${publishedAppUpdate.versionCode})",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MovieTextPrimary
+                                )
+                            }
+                        }
+
+                        TextButton(
+                            onClick = onClearPublishedApkUpdate,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MovieRedPrimary),
+                            modifier = Modifier.testTag("admin_btn_clear_apk_update")
+                        ) {
+                            Text(
+                                text = if (language == Language.SW) "Ondoa" else "Supprimer",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    if (publishedAppUpdate.releaseNotes.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = publishedAppUpdate.releaseNotes,
+                            fontSize = 11.sp,
+                            color = MovieTextSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        // Upload progress card
+        if (uploadState.isUploading) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MovieCardBg),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, MovieGold),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = uploadState.stageText,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MovieTextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${uploadState.percentage}%",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MovieGold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { uploadState.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MovieGold,
+                        trackColor = MovieSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Mode switcher: Faili la .APK vs Kiungo cha APK
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MovieSurfaceVariant)
+                .padding(4.dp)
+        ) {
+            Surface(
+                color = if (sourceMode == 0) MovieGold else Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { sourceMode = 0 }
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Android,
+                        contentDescription = null,
+                        tint = if (sourceMode == 0) Color.Black else MovieTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (language == Language.SW) "Faili ya .APK (Simu)" else "Fichier .APK (Local)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (sourceMode == 0) Color.Black else MovieTextSecondary
+                    )
+                }
+            }
+
+            Surface(
+                color = if (sourceMode == 1) MovieGold else Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { sourceMode = 1 }
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = null,
+                        tint = if (sourceMode == 1) Color.Black else MovieTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (language == Language.SW) "Kiungo cha APK URL" else "Lien URL APK",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (sourceMode == 1) Color.Black else MovieTextSecondary
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (sourceMode == 0) {
+            Surface(
+                color = MovieCardBg,
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = if (language == Language.SW)
+                            "Chagua faili jipya la .apk kutoka kwenye faili za simu:"
+                        else
+                            "Sélectionner le nouveau fichier .apk sur votre téléphone :",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MovieTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            apkPickerLauncher.launch(
+                                arrayOf(
+                                    "application/vnd.android.package-archive",
+                                    "application/octet-stream",
+                                    "*/*"
+                                )
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MovieBlueVip),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("admin_btn_pick_apk")
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (language == Language.SW)
+                                "Fungua Faili za Simu (Chagua .APK)"
+                            else
+                                "Choisir un fichier .APK",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    if (pickedApk != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            color = MovieGreenSuccess.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MovieGreenSuccess),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MovieGreenSuccess, modifier = Modifier.size(18.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = pickedApk!!.displayName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MovieTextPrimary
+                                    )
+                                    Text(
+                                        text = "${"%.1f".format(pickedApk!!.sizeMb)} MB - Tayari kutumwa kwenye Mise à jour",
+                                        fontSize = 10.sp,
+                                        color = MovieGreenSuccess
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            OutlinedTextField(
+                value = directApkUrl,
+                onValueChange = { directApkUrl = it },
+                label = { Text(if (language == Language.SW) "Kiungo cha APK (https://... .apk)" else "URL directe du fichier .apk") },
+                placeholder = { Text("https://github.com/.../app-release.apk") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_input_apk_url"),
+                shape = RoundedCornerShape(10.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = versionName,
+                onValueChange = { versionName = it },
+                label = { Text("Version Name") },
+                placeholder = { Text("2.0") },
+                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("admin_input_version_name"),
+                shape = RoundedCornerShape(10.dp)
+            )
+            OutlinedTextField(
+                value = versionCodeText,
+                onValueChange = { input ->
+                    if (input.all { it.isDigit() }) {
+                        versionCodeText = input
+                    }
+                },
+                label = { Text("Version Code") },
+                placeholder = { Text("${BuildConfig.VERSION_CODE + 1}") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("admin_input_version_code"),
+                shape = RoundedCornerShape(10.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = releaseNotes,
+            onValueChange = { releaseNotes = it },
+            label = {
+                Text(
+                    if (language == Language.SW)
+                        "Maelezo ya Sasisho (Hiari - mfano: Maboresho mapya)"
+                    else
+                        "Notes de version (Optionnel)"
+                )
+            },
+            maxLines = 3,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("admin_input_release_notes"),
+            shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        val parsedVersionCode = versionCodeText.toIntOrNull() ?: 0
+        val canPublish = !uploadState.isUploading &&
+            versionName.isNotBlank() &&
+            parsedVersionCode > 0 &&
+            ((sourceMode == 0 && pickedApk != null) || (sourceMode == 1 && directApkUrl.isNotBlank()))
+
+        Button(
+            onClick = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !AppNotificationHelper.hasNotificationPermission(context)
+                ) {
+                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                val apk = pickedApk
+                if (sourceMode == 0 && apk != null) {
+                    onPublishApkUpdate(
+                        apk.uri,
+                        apk.displayName,
+                        apk.sizeMb,
+                        "",
+                        parsedVersionCode,
+                        versionName,
+                        releaseNotes
+                    )
+                    pickedApk = null
+                    releaseNotes = ""
+                } else if (sourceMode == 1 && directApkUrl.isNotBlank()) {
+                    onPublishApkUpdate(
+                        null,
+                        "MovieSW_v$versionName.apk",
+                        15f,
+                        directApkUrl,
+                        parsedVersionCode,
+                        versionName,
+                        releaseNotes
+                    )
+                    directApkUrl = ""
+                    releaseNotes = ""
+                }
+            },
+            enabled = canPublish,
+            colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("admin_btn_publish_apk_update")
+        ) {
+            if (uploadState.isUploading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                    color = Color.Black
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (language == Language.SW)
+                        "Inatuma APK... (${uploadState.percentage}%)"
+                    else
+                        "Publication... (${uploadState.percentage}%)",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp
+                )
+            } else {
+                Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, tint = Color.Black)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (language == Language.SW)
+                        "Tuma Kwenye Mise à jour ya Akaunti"
+                    else
+                        "Publier vers Mise à jour (Compte)",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+

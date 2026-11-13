@@ -2,6 +2,7 @@ package com.example.util
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
@@ -10,6 +11,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
@@ -17,7 +19,8 @@ import java.util.concurrent.TimeUnit
 data class RemoteUpdateInfo(
     val versionCode: Int = -1,
     val versionName: String = "",
-    val apkUrl: String = ""
+    val apkUrl: String = "",
+    val releaseNotes: String = ""
 )
 
 sealed interface AppUpdateUiState {
@@ -67,8 +70,24 @@ object AppUpdateManager {
         return RemoteUpdateInfo(
             versionCode = parsed.versionCode,
             versionName = versionName,
-            apkUrl = apkUrl
+            apkUrl = apkUrl,
+            releaseNotes = parsed.releaseNotes.trim()
         )
+    }
+
+    fun encodeUpdateJson(info: RemoteUpdateInfo): String = updateAdapter.toJson(info)
+
+    fun decodeStoredUpdateJson(jsonText: String): RemoteUpdateInfo? {
+        return try {
+            val parsed = updateAdapter.fromJson(jsonText.trim()) ?: return null
+            if (parsed.versionCode <= 0 || parsed.versionName.isBlank() || parsed.apkUrl.isBlank()) {
+                null
+            } else {
+                parsed
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun isUpdateAvailable(remoteVersionCode: Int, installedVersionCode: Int): Boolean {
@@ -100,46 +119,85 @@ object AppUpdateManager {
         val tmpFile = File(updatesDir, "movie_sw_update.apk.tmp")
         val finalFile = File(updatesDir, "movie_sw_update.apk")
 
-        val request = Request.Builder()
-            .url(apkUrl)
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IllegalStateException("HTTP ${response.code}")
+        if (apkUrl.startsWith("file://") || apkUrl.startsWith("content://")) {
+            val parsedUri = Uri.parse(apkUrl)
+            val totalSize: Long
+            val inputStream = if (apkUrl.startsWith("file://")) {
+                val srcFile = File(parsedUri.path ?: "")
+                if (!srcFile.exists()) throw IllegalStateException("APK file not found")
+                totalSize = srcFile.length()
+                FileInputStream(srcFile)
+            } else {
+                totalSize = -1L
+                context.contentResolver.openInputStream(parsedUri)
+                    ?: throw IllegalStateException("Unable to open APK URI")
             }
-            val body = response.body ?: throw IllegalStateException("Empty APK body")
-            val contentLength = body.contentLength()
-            onProgress(if (contentLength > 0L) 0f else null, 0)
 
-            body.byteStream().use { input ->
+            onProgress(if (totalSize > 0L) 0f else null, 0)
+            inputStream.use { input ->
                 FileOutputStream(tmpFile).use { output ->
-                    val buffer = ByteArray(8 * 1024)
+                    val buffer = ByteArray(16 * 1024)
                     var totalRead = 0L
                     var lastPct = -1
-                    var lastUpdateMs = 0L
-
                     while (true) {
                         val read = input.read(buffer)
                         if (read == -1) break
                         output.write(buffer, 0, read)
                         totalRead += read
-
-                        val now = System.currentTimeMillis()
-                        if (contentLength > 0L) {
-                            val ratio = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                        if (totalSize > 0L) {
+                            val ratio = (totalRead.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
                             val pct = (ratio * 100f).toInt().coerceIn(0, 100)
-                            if (pct != lastPct && (now - lastUpdateMs >= 80L || pct == 100)) {
+                            if (pct != lastPct) {
                                 lastPct = pct
-                                lastUpdateMs = now
                                 onProgress(ratio, pct)
                             }
-                        } else if (now - lastUpdateMs >= 200L) {
-                            lastUpdateMs = now
-                            onProgress(null, 0)
                         }
                     }
                     output.flush()
+                }
+            }
+        } else {
+            val request = Request.Builder()
+                .url(apkUrl)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("HTTP ${response.code}")
+                }
+                val body = response.body ?: throw IllegalStateException("Empty APK body")
+                val contentLength = body.contentLength()
+                onProgress(if (contentLength > 0L) 0f else null, 0)
+
+                body.byteStream().use { input ->
+                    FileOutputStream(tmpFile).use { output ->
+                        val buffer = ByteArray(8 * 1024)
+                        var totalRead = 0L
+                        var lastPct = -1
+                        var lastUpdateMs = 0L
+
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                            totalRead += read
+
+                            val now = System.currentTimeMillis()
+                            if (contentLength > 0L) {
+                                val ratio = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                                val pct = (ratio * 100f).toInt().coerceIn(0, 100)
+                                if (pct != lastPct && (now - lastUpdateMs >= 80L || pct == 100)) {
+                                    lastPct = pct
+                                    lastUpdateMs = now
+                                    onProgress(ratio, pct)
+                                }
+                            } else if (now - lastUpdateMs >= 200L) {
+                                lastUpdateMs = now
+                                onProgress(null, 0)
+                            }
+                        }
+                        output.flush()
+                    }
                 }
             }
         }
