@@ -1,14 +1,36 @@
 package com.example.data
 
+import android.content.Context
 import com.example.R
+import com.example.data.local.AppStateEntity
+import com.example.data.local.EntityMappers.toDomain
+import com.example.data.local.EntityMappers.toEntity
+import com.example.data.local.MovieSwDatabase
 import com.example.model.*
 import com.example.util.SecurityUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 object MovieRepository {
+
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var database: MovieSwDatabase? = null
+
+    private val _isStorageReady = MutableStateFlow(false)
+    val isStorageReady: StateFlow<Boolean> = _isStorageReady.asStateFlow()
+
+    private val _savedSessionState = MutableStateFlow(AppStateEntity())
+    val savedSessionState: StateFlow<AppStateEntity> = _savedSessionState.asStateFlow()
+
+    private val _persistedDownloads = MutableStateFlow<Map<String, DownloadTask>>(emptyMap())
+    val persistedDownloads: StateFlow<Map<String, DownloadTask>> = _persistedDownloads.asStateFlow()
 
     // Salt and hash for default admin and demo user
     private val adminSalt = SecurityUtil.generateSalt()
@@ -27,7 +49,7 @@ object MovieRepository {
                 passwordHash = adminHash,
                 salt = adminSalt,
                 ageTier = AgeTier.AGE_18_PLUS,
-                vipTier = VipTier.VIP_PRO_MAX,
+                vipTier = VipTier.VIP_PRO,
                 role = UserRole.ADMIN,
                 preferredQuality = VideoQuality.P8K,
                 isEmailVerified = true
@@ -74,7 +96,7 @@ object MovieRepository {
                 passwordHash = demoHash,
                 salt = demoSalt,
                 ageTier = AgeTier.AGE_18_PLUS,
-                vipTier = VipTier.VIP_PRO_MAX,
+                vipTier = VipTier.VIP_PRO,
                 role = UserRole.VIEWER,
                 preferredQuality = VideoQuality.P8K,
                 actionDownloadsThisMonth = 14,
@@ -107,12 +129,14 @@ object MovieRepository {
                 passwordHash = demoHash,
                 salt = demoSalt,
                 ageTier = AgeTier.AGE_18_PLUS,
-                vipTier = VipTier.VIP_PRO_MAX,
+                vipTier = VipTier.VIP_PRO,
                 role = UserRole.DJ,
                 preferredQuality = VideoQuality.P1080,
                 isEmailVerified = true,
                 djStageName = "DJ Afro",
-                hasDashboardAccess = true
+                hasDashboardAccess = true,
+                vipActivatedAt = System.currentTimeMillis(),
+                vipExpiresAt = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000)
             ),
             UserAccount(
                 id = "dj_02",
@@ -122,12 +146,14 @@ object MovieRepository {
                 passwordHash = demoHash,
                 salt = demoSalt,
                 ageTier = AgeTier.AGE_18_PLUS,
-                vipTier = VipTier.VIP_PRO_MAX,
+                vipTier = VipTier.VIP_PRO,
                 role = UserRole.DJ,
                 preferredQuality = VideoQuality.P1080,
                 isEmailVerified = true,
                 djStageName = "DJ Murphy",
-                hasDashboardAccess = true
+                hasDashboardAccess = true,
+                vipActivatedAt = System.currentTimeMillis(),
+                vipExpiresAt = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000)
             ),
             UserAccount(
                 id = "dj_03",
@@ -305,7 +331,7 @@ object MovieRepository {
         listOf(
             CommentItem("c1", "mov_01", "Rashidi Simba", "Tanzania", VipTier.VIP_PRO, "DJ Afro ametisha sana kwenye hii filamu! Nimecheka mwanzo mwisho.", "Masaa 2 yaliyopita", 5),
             CommentItem("c2", "mov_01", "Baraka Ken", "Kenya", VipTier.BURE, "Mapigano ya Shaolin yanapendeza sana, tafsiri safi kabisa.", "Masaa 5 yaliyopita", 5),
-            CommentItem("c3", "mov_02", "Chantal M.", "DRC", VipTier.VIP_PRO_MAX, "Cette série coréenne est incroyable ! Très belle qualité d'image en VIP.", "Jana", 5),
+            CommentItem("c3", "mov_02", "Chantal M.", "DRC", VipTier.VIP_PRO, "Cette série coréenne est incroyable ! Très belle qualité d'image en VIP.", "Jana", 5),
             CommentItem("c4", "mov_05", "Moses Otieno", "Kenya", VipTier.VIP_PRO, "Faili la Admin lipo vizuri sana, ubora wa 1080p unalipa fedha zangu za VIP.", "Siku 2 zilizopita", 5)
         )
     )
@@ -325,8 +351,8 @@ object MovieRepository {
                 id = "notif_2",
                 titleSw = "Ofa Maalum ya VIP Pro",
                 titleFr = "Offre Spéciale VIP Pro",
-                messageSw = "Pata upakuaji wa filamu 10 za Action na mfululizo 5 kwa $2.99 tu kwa mwezi mzima.",
-                messageFr = "Débloquez les téléchargements et la haute définition dès aujourd'hui.",
+                messageSw = "Fungua filamu zote za VIP, ubora wa 8K na upakuaji bila kikomo kwa $3.99 tu kwa mwezi mzima.",
+                messageFr = "Débloquez les téléchargements illimités et la haute définition pour 3.99 $ / mois.",
                 timeAgo = "Masaa 3 yaliyopita"
             ),
             NotificationItem(
@@ -359,6 +385,110 @@ object MovieRepository {
         CountryStat("Burundi & Wengine", 4, 450)
     )
 
+    // Persistence Initialization (called on app start)
+    fun initialize(context: Context) {
+        if (database != null) return
+        synchronized(this) {
+            if (database != null) return
+            val db = MovieSwDatabase.getInstance(context)
+            database = db
+            ioScope.launch {
+                val existingSession = db.appStateDao().getSession()
+                if (existingSession == null || !existingSession.isSeeded) {
+                    // Seed defaults on very first launch
+                    db.userDao().upsertAll(_users.value.map { it.toEntity() })
+                    val baseTime = System.currentTimeMillis()
+                    db.movieDao().upsertAll(_movies.value.mapIndexed { idx, m ->
+                        m.toEntity(sortOrder = baseTime - idx)
+                    })
+                    db.commentDao().upsertAll(_comments.value.mapIndexed { idx, c ->
+                        c.toEntity(sortOrder = baseTime - idx)
+                    })
+                    db.notificationDao().upsertAll(_notifications.value.mapIndexed { idx, n ->
+                        n.toEntity(sortOrder = baseTime - idx)
+                    })
+                    val initialSession = AppStateEntity(
+                        stateKey = "main_session",
+                        loggedInUserId = null,
+                        languageCode = "sw",
+                        hasCompletedOnboarding = false,
+                        lastBottomNavTab = "home",
+                        isSeeded = true
+                    )
+                    db.appStateDao().saveSession(initialSession)
+                    _savedSessionState.value = initialSession
+                } else {
+                    // Restore saved state from Room
+                    val loadedUsers = db.userDao().getAllUsers().map { it.toDomain() }
+                    if (loadedUsers.isNotEmpty()) {
+                        _users.value = loadedUsers
+                    }
+                    val loadedMovies = db.movieDao().getAllMovies().map { it.toDomain() }
+                    _movies.value = loadedMovies
+                    val loadedComments = db.commentDao().getAllComments().map { it.toDomain() }
+                    _comments.value = loadedComments
+                    val loadedNotifications = db.notificationDao().getAllNotifications().map { it.toDomain() }
+                    _notifications.value = loadedNotifications
+                    _savedSessionState.value = existingSession
+
+                    existingSession.loggedInUserId?.let { uid ->
+                        val tasks = db.downloadTaskDao().getDownloadsForUser(uid).map { it.toDomain() }
+                        _persistedDownloads.value = tasks.associateBy { it.id }
+                    }
+                }
+                checkAndExpireVipSubscriptions()
+                _isStorageReady.value = true
+            }
+        }
+    }
+
+    fun saveSession(
+        loggedInUserId: String? = _savedSessionState.value.loggedInUserId,
+        languageCode: String = _savedSessionState.value.languageCode,
+        hasCompletedOnboarding: Boolean = _savedSessionState.value.hasCompletedOnboarding,
+        lastBottomNavTab: String = _savedSessionState.value.lastBottomNavTab
+    ) {
+        val updated = _savedSessionState.value.copy(
+            loggedInUserId = loggedInUserId,
+            languageCode = languageCode,
+            hasCompletedOnboarding = hasCompletedOnboarding,
+            lastBottomNavTab = lastBottomNavTab,
+            isSeeded = true
+        )
+        _savedSessionState.value = updated
+        val db = database ?: return
+        ioScope.launch {
+            db.appStateDao().saveSession(updated)
+            if (loggedInUserId != null) {
+                val tasks = db.downloadTaskDao().getDownloadsForUser(loggedInUserId).map { it.toDomain() }
+                _persistedDownloads.value = tasks.associateBy { it.id }
+            } else {
+                _persistedDownloads.value = emptyMap()
+            }
+        }
+    }
+
+    fun persistDownloadTask(userId: String, task: DownloadTask) {
+        _persistedDownloads.value = _persistedDownloads.value + (task.id to task)
+        val db = database ?: return
+        ioScope.launch {
+            db.downloadTaskDao().upsertDownload(task.toEntity(userId))
+        }
+    }
+
+    fun removePersistedDownloadTask(userId: String, taskId: String) {
+        _persistedDownloads.value = _persistedDownloads.value - taskId
+        val db = database ?: return
+        ioScope.launch {
+            db.downloadTaskDao().deleteDownload(taskId, userId)
+        }
+    }
+
+    private fun persistUser(user: UserAccount) {
+        val db = database ?: return
+        ioScope.launch { db.userDao().upsertUser(user.toEntity()) }
+    }
+
     // User Operations
     fun registerUser(
         name: String,
@@ -384,6 +514,7 @@ object MovieRepository {
             isEmailVerified = isEmailVerified
         )
         _users.value = _users.value + newUser
+        persistUser(newUser)
         return newUser
     }
 
@@ -392,7 +523,9 @@ object MovieRepository {
         _users.value = _users.value.map {
             if (it.id == userId) {
                 updated = true
-                it.copy(isEmailVerified = true)
+                val copy = it.copy(isEmailVerified = true)
+                persistUser(copy)
+                copy
             } else it
         }
         return updated
@@ -417,7 +550,9 @@ object MovieRepository {
         val newHash = SecurityUtil.hashPassword(newPasswordPlain, newSalt)
         _users.value = _users.value.map {
             if (it.id == user.id) {
-                it.copy(passwordHash = newHash, salt = newSalt)
+                val copy = it.copy(passwordHash = newHash, salt = newSalt)
+                persistUser(copy)
+                copy
             } else it
         }
         return true
@@ -428,11 +563,13 @@ object MovieRepository {
         val expiry = if (newTier == VipTier.BURE) null else now + (30L * 24 * 60 * 60 * 1000) // 1 month = 30 days
         _users.value = _users.value.map {
             if (it.id == userId) {
-                it.copy(
+                val copy = it.copy(
                     vipTier = newTier,
                     vipActivatedAt = if (newTier == VipTier.BURE) null else now,
                     vipExpiresAt = expiry
                 )
+                persistUser(copy)
+                copy
             } else it
         }
     }
@@ -443,11 +580,13 @@ object MovieRepository {
         _users.value = _users.value.map { user ->
             if (user.role != UserRole.ADMIN && user.vipTier != VipTier.BURE && user.vipExpiresAt != null && now >= user.vipExpiresAt) {
                 expired.add(user)
-                user.copy(
+                val copy = user.copy(
                     vipTier = VipTier.BURE,
                     vipActivatedAt = null,
                     vipExpiresAt = null
                 )
+                persistUser(copy)
+                copy
             } else user
         }
         return expired
@@ -464,6 +603,7 @@ object MovieRepository {
     ): UserAccount {
         val salt = SecurityUtil.generateSalt()
         val hash = SecurityUtil.hashPassword(passwordPlain, salt)
+        val now = System.currentTimeMillis()
         val newDj = UserAccount(
             id = "dj_" + UUID.randomUUID().toString().take(8),
             name = name,
@@ -472,14 +612,17 @@ object MovieRepository {
             passwordHash = hash,
             salt = salt,
             ageTier = AgeTier.AGE_18_PLUS,
-            vipTier = VipTier.VIP_PRO_MAX,
+            vipTier = VipTier.VIP_PRO,
             role = UserRole.DJ,
             preferredQuality = VideoQuality.P1080,
             isEmailVerified = true,
             djStageName = djStageName.trim(),
-            hasDashboardAccess = grantAccess
+            hasDashboardAccess = grantAccess,
+            vipActivatedAt = now,
+            vipExpiresAt = now + (30L * 24 * 60 * 60 * 1000)
         )
         _users.value = _users.value + newDj
+        persistUser(newDj)
         return newDj
     }
 
@@ -488,7 +631,9 @@ object MovieRepository {
         _users.value = _users.value.map {
             if (it.id == userId && it.role == UserRole.DJ) {
                 found = true
-                it.copy(hasDashboardAccess = hasAccess)
+                val copy = it.copy(hasDashboardAccess = hasAccess)
+                persistUser(copy)
+                copy
             } else it
         }
         return found
@@ -496,16 +641,24 @@ object MovieRepository {
 
     fun updateUserQuality(userId: String, quality: VideoQuality) {
         _users.value = _users.value.map {
-            if (it.id == userId) it.copy(preferredQuality = quality) else it
+            if (it.id == userId) {
+                val copy = it.copy(preferredQuality = quality)
+                persistUser(copy)
+                copy
+            } else it
         }
     }
 
     fun deleteUser(userId: String) {
         _users.value = _users.value.filter { it.id != userId }
+        val db = database ?: return
+        ioScope.launch { db.userDao().deleteUserById(userId) }
     }
 
     fun deleteMovie(movieId: String) {
         _movies.value = _movies.value.filter { it.id != movieId }
+        val db = database ?: return
+        ioScope.launch { db.movieDao().deleteMovieById(movieId) }
     }
 
     fun toggleFavorite(userId: String, movieId: String) {
@@ -517,24 +670,20 @@ object MovieRepository {
                 } else {
                     current + movieId
                 }
-                user.copy(favoritesMovieIds = updated)
+                val copy = user.copy(favoritesMovieIds = updated)
+                persistUser(copy)
+                copy
             } else user
         }
     }
 
     fun downloadMovie(userId: String, movie: MovieItem): Boolean {
         val user = _users.value.find { it.id == userId } ?: return false
-        if (user.vipTier == VipTier.BURE) {
+        if (!user.isVipActive()) {
             return false
         }
         val isAction = movie.category == MovieCategory.ACTION
         val isSeries = movie.isSeries
-
-        // Check limits if VIP Pro
-        if (user.vipTier == VipTier.VIP_PRO) {
-            if (isAction && user.actionDownloadsThisMonth >= 10) return false
-            if (isSeries && user.seriesDownloadsThisMonth >= 5) return false
-        }
 
         val updatedAction = if (isAction) user.actionDownloadsThisMonth + 1 else user.actionDownloadsThisMonth
         val updatedSeries = if (isSeries) user.seriesDownloadsThisMonth + 1 else user.seriesDownloadsThisMonth
@@ -544,17 +693,19 @@ object MovieRepository {
 
         _users.value = _users.value.map {
             if (it.id == userId) {
-                it.copy(
+                val copy = it.copy(
                     actionDownloadsThisMonth = updatedAction,
                     seriesDownloadsThisMonth = updatedSeries,
                     downloadedMovieIds = updatedDownloads
                 )
+                persistUser(copy)
+                copy
             } else it
         }
         return true
     }
 
-    // Admin Operations
+    // Admin / DJ Operations
     fun addMovie(
         title: String,
         category: MovieCategory,
@@ -588,6 +739,12 @@ object MovieRepository {
             episodes = episodesList
         )
         _movies.value = listOf(movie) + _movies.value
+        val db = database
+        if (db != null) {
+            ioScope.launch {
+                db.movieDao().upsertMovie(movie.toEntity(sortOrder = System.currentTimeMillis()))
+            }
+        }
         return movie
     }
 
@@ -603,6 +760,12 @@ object MovieRepository {
             rating = rating
         )
         _comments.value = listOf(comment) + _comments.value
+        val db = database
+        if (db != null) {
+            ioScope.launch {
+                db.commentDao().upsertComment(comment.toEntity(sortOrder = System.currentTimeMillis()))
+            }
+        }
     }
 
     fun broadcastNotification(titleSw: String, titleFr: String, msgSw: String, msgFr: String) {
@@ -615,5 +778,11 @@ object MovieRepository {
             timeAgo = "Sasa hivi"
         )
         _notifications.value = listOf(notif) + _notifications.value
+        val db = database
+        if (db != null) {
+            ioScope.launch {
+                db.notificationDao().upsertNotification(notif.toEntity(sortOrder = System.currentTimeMillis()))
+            }
+        }
     }
 }

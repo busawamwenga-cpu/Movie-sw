@@ -829,18 +829,32 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             OutlinedButton(
                                 onClick = {
+                                    onSwitchMode(AuthMode.SIGN_IN)
                                     identifier = "viewer@moviesw.com"
                                     password = "viewer1234"
                                 },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
                             ) {
-                                Text("Viewer Demo", fontSize = 11.sp, color = MovieTextPrimary)
+                                Text("Viewer", fontSize = 11.sp, color = MovieTextPrimary)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    onSwitchMode(AuthMode.SIGN_IN)
+                                    identifier = "djafro@moviesw.com"
+                                    password = "viewer1234"
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                            ) {
+                                Text("DJ Demo", fontSize = 11.sp, color = MovieBlueVip)
                             }
 
                             OutlinedButton(
@@ -851,7 +865,7 @@ fun AuthScreen(
                                 },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
                             ) {
                                 Text("Admin Yesu", fontSize = 11.sp, color = MovieGoldLight)
                             }

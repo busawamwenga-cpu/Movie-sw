@@ -45,10 +45,14 @@ fun AdminDashboardScreen(
     onChangeUserVip: (String, VipTier) -> Unit,
     onDeleteUser: (String) -> Unit,
     onBroadcastNotif: (String, String, String, String) -> Unit,
+    onCreateDjAccount: (String, String, String, String, String, Boolean) -> Unit,
+    onToggleDjAccess: (String, Boolean) -> Unit,
+    onCancelUserVip: (String) -> Unit,
+    onRenewUserVip: (String, VipTier) -> Unit,
     onLanguageToggle: () -> Unit,
     onExitAdmin: () -> Unit
 ) {
-    var adminTab by remember { mutableIntStateOf(0) } // 0: Publish, 1: Manage Movies, 2: Customers, 3: Analytics, 4: Social & Notifs
+    var adminTab by remember { mutableIntStateOf(0) } // 0: Publish, 1: Manage Movies, 2: Customers, 3: Ma-DJ & Access, 4: Analytics, 5: Social & Notifs
 
     Box(
         modifier = Modifier
@@ -191,12 +195,13 @@ fun AdminDashboardScreen(
                         )
                     }
                 )
+                val djCount = remember(users) { users.count { it.role == UserRole.DJ } }
                 Tab(
                     selected = adminTab == 3,
                     onClick = { adminTab = 3 },
                     text = {
                         Text(
-                            text = Strings.tabStats(language),
+                            text = if (language == Language.SW) "Ma-DJ & Access ($djCount)" else "DJs & Accès ($djCount)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 3) MovieGold else MovieTextSecondary
@@ -208,10 +213,22 @@ fun AdminDashboardScreen(
                     onClick = { adminTab = 4 },
                     text = {
                         Text(
-                            text = Strings.tabSocialAdmin(language),
+                            text = Strings.tabStats(language),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 4) MovieGold else MovieTextSecondary
+                        )
+                    }
+                )
+                Tab(
+                    selected = adminTab == 5,
+                    onClick = { adminTab = 5 },
+                    text = {
+                        Text(
+                            text = Strings.tabSocialAdmin(language),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (adminTab == 5) MovieGold else MovieTextSecondary
                         )
                     }
                 )
@@ -227,9 +244,10 @@ fun AdminDashboardScreen(
                 when (adminTab) {
                     0 -> AdminPublishTab(language, adminUploadState, onAddMovie, onStartUploadMovie)
                     1 -> AdminManageMoviesTab(language, movies, onDeleteMovie)
-                    2 -> AdminCustomersTab(language, users, onChangeUserVip, onDeleteUser)
-                    3 -> AdminAnalyticsTab(language, movies)
-                    4 -> AdminSocialAndNotifsTab(language, socialLinks, onBroadcastNotif)
+                    2 -> AdminCustomersTab(language, users, onChangeUserVip, onCancelUserVip, onRenewUserVip, onDeleteUser)
+                    3 -> AdminDjAccountsTab(language, users, onCreateDjAccount, onToggleDjAccess, onDeleteUser)
+                    4 -> AdminAnalyticsTab(language, movies)
+                    5 -> AdminSocialAndNotifsTab(language, socialLinks, onBroadcastNotif)
                 }
             }
         }
@@ -867,6 +885,8 @@ private fun AdminCustomersTab(
     language: Language,
     users: List<UserAccount>,
     onChangeUserVip: (String, VipTier) -> Unit,
+    onCancelUserVip: (String) -> Unit,
+    onRenewUserVip: (String, VipTier) -> Unit,
     onDeleteUser: (String) -> Unit
 ) {
     var userToDelete by remember { mutableStateOf<UserAccount?>(null) }
@@ -920,7 +940,7 @@ private fun AdminCustomersTab(
                 color = MovieTextPrimary
             )
             Text(
-                text = if (language == Language.SW) "Unaweza kubadilisha kiwango cha mteja (Bure, VIP Pro, VIP Pro Max) au kumfuta." else "Gérez les forfaits VIP ou supprimez des utilisateurs.",
+                text = if (language == Language.SW) "Unaweza kubadilisha kiwango cha mteja (Bure au VIP Pro) au kumfuta." else "Gérez les forfaits VIP Pro ou supprimez des utilisateurs.",
                 fontSize = 12.sp,
                 color = MovieTextSecondary
             )
@@ -1021,6 +1041,63 @@ private fun AdminCustomersTab(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    // Role + VIP expiry status row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = when (user.role) {
+                                UserRole.ADMIN -> MovieGold.copy(alpha = 0.2f)
+                                UserRole.DJ -> MovieBlueVip.copy(alpha = 0.2f)
+                                UserRole.VIEWER -> MovieSurfaceVariant
+                            },
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = when (user.role) {
+                                    UserRole.ADMIN -> "ADMIN"
+                                    UserRole.DJ -> "DJ: ${user.djStageName ?: user.name}"
+                                    UserRole.VIEWER -> "VIEWER"
+                                },
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = when (user.role) {
+                                    UserRole.ADMIN -> MovieGold
+                                    UserRole.DJ -> MovieBlueVip
+                                    UserRole.VIEWER -> MovieTextSecondary
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        if (user.role != UserRole.ADMIN) {
+                            val activeVip = user.isVipActive()
+                            Surface(
+                                color = if (activeVip) MovieGreenSuccess.copy(alpha = 0.16f) else MovieSurfaceVariant,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = if (activeVip) {
+                                        if (language == Language.SW)
+                                            "VIP Mwezi 1: Siku ${user.daysRemaining()} zimebaki"
+                                        else
+                                            "VIP 1 Mois: ${user.daysRemaining()}j restants"
+                                    } else {
+                                        if (language == Language.SW) "Bure (Haina VIP)" else "Gratuit (Expiré)"
+                                    },
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (activeVip) MovieGreenSuccess else MovieTextSecondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1038,36 +1115,355 @@ private fun AdminCustomersTab(
                             )
                         }
 
-                        // VIP Tier selector
+                        // VIP Tier selector (1-month activation or revoke back to Bure)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             VipTier.values().forEach { tier ->
-                                val isSelected = user.vipTier == tier
+                                val isSelected = if (tier == VipTier.BURE) !user.isVipActive() else (user.isVipActive() && user.vipTier == tier)
                                 Surface(
                                     color = if (isSelected) {
                                         when (tier) {
-                                            VipTier.VIP_PRO_MAX -> MovieGold
-                                            VipTier.VIP_PRO -> MovieBlueVip
+                                            VipTier.VIP_PRO -> MovieGold
                                             VipTier.BURE -> MovieSurfaceVariant
                                         }
                                     } else MovieDarkBg,
                                     shape = RoundedCornerShape(6.dp),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
-                                    modifier = Modifier.clickable { onChangeUserVip(user.id, tier) }
+                                    modifier = Modifier.clickable {
+                                        when (tier) {
+                                            VipTier.BURE -> onCancelUserVip(user.id)
+                                            else -> onRenewUserVip(user.id, tier)
+                                        }
+                                    }
                                 ) {
                                     Text(
                                         text = when (tier) {
-                                            VipTier.VIP_PRO_MAX -> "Max"
-                                            VipTier.VIP_PRO -> "Pro"
+                                            VipTier.VIP_PRO -> "VIP Pro 30d"
                                             VipTier.BURE -> "Bure"
                                         },
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSelected && tier == VipTier.VIP_PRO_MAX) Color.Black else Color.White,
+                                        color = if (isSelected && tier == VipTier.VIP_PRO) Color.Black else Color.White,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                     )
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 3b. Akaunti za Ma-DJ na Udhibiti wa Access ya Dashboard (Admin Exclusive)
+@Composable
+private fun AdminDjAccountsTab(
+    language: Language,
+    users: List<UserAccount>,
+    onCreateDjAccount: (String, String, String, String, String, Boolean) -> Unit,
+    onToggleDjAccess: (String, Boolean) -> Unit,
+    onDeleteUser: (String) -> Unit
+) {
+    val djUsers = remember(users) { users.filter { it.role == UserRole.DJ } }
+    var fullName by remember { mutableStateOf("") }
+    var stageName by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var country by remember { mutableStateOf("RD Congo (RDC)") }
+    var password by remember { mutableStateOf("") }
+    var grantAccess by remember { mutableStateOf(true) }
+    var djToDelete by remember { mutableStateOf<UserAccount?>(null) }
+
+    if (djToDelete != null) {
+        val target = djToDelete!!
+        AlertDialog(
+            onDismissRequest = { djToDelete = null },
+            title = {
+                Text(
+                    text = if (language == Language.SW) "Futa Akaunti ya DJ" else "Supprimer le compte DJ",
+                    fontWeight = FontWeight.Bold,
+                    color = MovieRedPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = if (language == Language.SW)
+                        "Una uhakika unataka kufuta akaunti ya ${target.djStageName ?: target.name}?"
+                    else
+                        "Voulez-vous vraiment supprimer le compte DJ ${target.djStageName ?: target.name} ?",
+                    color = MovieTextPrimary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteUser(target.id)
+                        djToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MovieRedPrimary)
+                ) {
+                    Text(if (language == Language.SW) "Futa" else "Supprimer", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { djToDelete = null }) {
+                    Text(if (language == Language.SW) "Ghairi" else "Annuler")
+                }
+            },
+            containerColor = MovieSurfaceVariant
+        )
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        // Create DJ Account Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MovieCardBg),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MovieGold)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MovieGold)
+                        Text(
+                            text = if (language == Language.SW)
+                                "Unda Akaunti Mpya ya DJ (Kuweka Filamu Zao)"
+                            else
+                                "Créer un Compte DJ (Publication de Films)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MovieTextPrimary
+                        )
+                    }
+
+                    Text(
+                        text = if (language == Language.SW)
+                            "Admin anatengeneza akaunti ya DJ na anaamua kumpa au kumnyima access ya kuingia kwenye Dashboard."
+                        else
+                            "L'administrateur crée le compte DJ et contrôle son accès au tableau de bord.",
+                        fontSize = 11.sp,
+                        color = MovieTextSecondary
+                    )
+
+                    OutlinedTextField(
+                        value = fullName,
+                        onValueChange = { fullName = it },
+                        label = { Text(if (language == Language.SW) "Jina Kamili la DJ" else "Nom complet du DJ") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_dj_input_name"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = stageName,
+                        onValueChange = { stageName = it },
+                        label = { Text(if (language == Language.SW) "Jina la Kisanii (mfano: DJ Mwanga)" else "Nom de scène (ex: DJ Mwanga)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_dj_input_stage"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Gmail / Barua pepe ya DJ") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_dj_input_email"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = country,
+                            onValueChange = { country = it },
+                            label = { Text(if (language == Language.SW) "Nchi" else "Pays") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text(if (language == Language.SW) "Nywila (6+)" else "Mot de passe") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).testTag("admin_dj_input_password"),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MovieSurfaceVariant)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (language == Language.SW) "Mpe Access ya Dashboard" else "Autoriser l'accès Dashboard",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MovieTextPrimary
+                            )
+                            Text(
+                                text = if (grantAccess)
+                                    (if (language == Language.SW) "Ataweza kuingia na kupakia filamu zake" else "Pourra se connecter et publier")
+                                else
+                                    (if (language == Language.SW) "Akaunti itaundwa bila access hadi umruhusu" else "Compte bloqué jusqu'à activation"),
+                                fontSize = 10.sp,
+                                color = MovieTextSecondary
+                            )
+                        }
+                        Switch(
+                            checked = grantAccess,
+                            onCheckedChange = { grantAccess = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = MovieGreenSuccess)
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            onCreateDjAccount(fullName, email, password, stageName, country, grantAccess)
+                            if (fullName.isNotBlank() && email.isNotBlank() && password.length >= 6 && stageName.isNotBlank()) {
+                                fullName = ""
+                                stageName = ""
+                                email = ""
+                                password = ""
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("admin_btn_create_dj"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (language == Language.SW) "Unda Akaunti ya DJ" else "Créer le Compte DJ",
+                            fontWeight = FontWeight.Black,
+                            color = Color.Black
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                text = if (language == Language.SW)
+                    "Ma-DJ Waliosajiliwa & Udhibiti wa Access (${djUsers.size})"
+                else
+                    "DJs Enregistrés & Contrôle d'Accès (${djUsers.size})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = MovieTextPrimary
+            )
+        }
+
+        items(djUsers, key = { it.id }) { dj ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MovieCardBg),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (dj.hasDashboardAccess) MovieGreenSuccess.copy(alpha = 0.6f) else MovieRedPrimary.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = dj.djStageName ?: dj.name,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    color = MovieGoldLight
+                                )
+                                Surface(
+                                    color = if (dj.hasDashboardAccess)
+                                        MovieGreenSuccess.copy(alpha = 0.2f)
+                                    else
+                                        MovieRedPrimary.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (dj.hasDashboardAccess) "ACCESS ACTIVE" else "ACCESS BLOQUÉE",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (dj.hasDashboardAccess) MovieGreenSuccess else MovieRedPrimary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "${dj.name} • ${dj.emailOrPhone} • ${dj.country}",
+                                fontSize = 11.sp,
+                                color = MovieTextSecondary
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { djToDelete = dj },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete DJ",
+                                tint = MovieRedPrimary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MovieSurfaceVariant)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (dj.hasDashboardAccess)
+                                (if (language == Language.SW) "Ruhusa ya Kuweka Filamu: IMEWASHWA" else "Accès Publication : ACTIVÉ")
+                            else
+                                (if (language == Language.SW) "Ruhusa ya Kuweka Filamu: IMEZIMWA" else "Accès Publication : BLOQUÉ"),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (dj.hasDashboardAccess) MovieGreenSuccess else MovieRedPrimary
+                        )
+
+                        Switch(
+                            checked = dj.hasDashboardAccess,
+                            onCheckedChange = { onToggleDjAccess(dj.id, it) },
+                            modifier = Modifier.testTag("admin_dj_access_switch_${dj.id}"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = MovieGreenSuccess)
+                        )
                     }
                 }
             }

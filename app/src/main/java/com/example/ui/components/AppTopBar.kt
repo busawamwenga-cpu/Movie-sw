@@ -125,42 +125,34 @@ fun AppTopBar(
                     }
                 }
 
-                // VIP Badge Button
-                val userVip = currentUser?.vipTier ?: VipTier.BURE
-                Surface(
-                    color = when (userVip) {
-                        VipTier.VIP_PRO_MAX -> MovieGold
-                        VipTier.VIP_PRO -> MovieBlueVip
-                        VipTier.BURE -> MovieSurfaceVariant
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .testTag("vip_badge_button")
-                        .clickable { onVipClick() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                // VIP Badge Button (Removed while 1-month VIP is active; reappears when subscription expires)
+                if (currentUser?.isVipActive() != true) {
+                    val userVip = VipTier.BURE
+                    Surface(
+                        color = MovieSurfaceVariant,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .testTag("vip_badge_button")
+                            .clickable { onVipClick() }
                     ) {
-                        if (userVip != VipTier.BURE) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Star,
                                 contentDescription = "VIP",
-                                tint = if (userVip == VipTier.VIP_PRO_MAX) Color.Black else Color.White,
+                                tint = MovieGold,
                                 modifier = Modifier.size(13.dp)
                             )
+                            Text(
+                                text = "VIP",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
                         }
-                        Text(
-                            text = when (userVip) {
-                                VipTier.VIP_PRO_MAX -> "MAX"
-                                VipTier.VIP_PRO -> "PRO"
-                                VipTier.BURE -> if (language == Language.SW) "VIP" else "VIP"
-                            },
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (userVip == VipTier.VIP_PRO_MAX) Color.Black else Color.White
-                        )
                     }
                 }
 

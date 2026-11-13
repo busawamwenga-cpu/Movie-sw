@@ -6,6 +6,7 @@ import com.example.data.MovieRepository
 import com.example.model.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class ScreenState {
     SPLASH,
@@ -138,11 +139,14 @@ class MovieViewModel : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.Lazily, listOf("DJ Afro", "DJ Murphy", "DJ Black", "DJ Vasco", "DJ Smith"))
 
     fun toggleLanguage() {
-        _language.value = if (_language.value == Language.SW) Language.FR else Language.SW
+        val next = if (_language.value == Language.SW) Language.FR else Language.SW
+        _language.value = next
+        MovieRepository.saveSession(languageCode = next.code)
     }
 
     fun setLanguage(lang: Language) {
         _language.value = lang
+        MovieRepository.saveSession(languageCode = lang.code)
     }
 
     fun navigateTo(screen: ScreenState) {
@@ -151,6 +155,49 @@ class MovieViewModel : ViewModel() {
 
     fun setBottomNavTab(tab: String) {
         _bottomNavTab.value = tab
+        MovieRepository.saveSession(lastBottomNavTab = tab)
+    }
+
+    fun onSplashFinished() {
+        viewModelScope.launch {
+            withTimeoutOrNull(1500) {
+                MovieRepository.isStorageReady.first { it }
+            }
+            MovieRepository.checkAndExpireVipSubscriptions()
+            val session = MovieRepository.savedSessionState.value
+            _language.value = if (session.languageCode == Language.FR.code) Language.FR else Language.SW
+            _bottomNavTab.value = session.lastBottomNavTab.ifBlank { "home" }
+
+            val restoredUser = session.loggedInUserId?.let { uid ->
+                MovieRepository.users.value.find { it.id == uid }
+            }
+            if (restoredUser != null) {
+                if (restoredUser.role == UserRole.DJ && !restoredUser.hasDashboardAccess) {
+                    MovieRepository.saveSession(loggedInUserId = null)
+                    _currentUser.value = null
+                    _currentScreen.value = ScreenState.BIENVENUE
+                } else {
+                    _currentUser.value = restoredUser
+                    _activeDownloads.value = MovieRepository.persistedDownloads.value
+                    _currentScreen.value = when (restoredUser.role) {
+                        UserRole.ADMIN -> ScreenState.ADMIN_DASHBOARD
+                        UserRole.DJ -> ScreenState.DJ_DASHBOARD
+                        UserRole.VIEWER -> ScreenState.MAIN_VIEWER
+                    }
+                }
+            } else {
+                _currentScreen.value = if (session.hasCompletedOnboarding) {
+                    ScreenState.BIENVENUE
+                } else {
+                    ScreenState.ONBOARDING
+                }
+            }
+        }
+    }
+
+    fun completeOnboarding() {
+        MovieRepository.saveSession(hasCompletedOnboarding = true)
+        _currentScreen.value = ScreenState.BIENVENUE
     }
 
     fun setAuthMode(mode: AuthMode) {
@@ -199,6 +246,26 @@ class MovieViewModel : ViewModel() {
 
     init {
         MovieRepository.checkAndExpireVipSubscriptions()
+        viewModelScope.launch {
+            MovieRepository.users.collect { list ->
+                val current = _currentUser.value
+                if (current != null) {
+                    val updated = list.find { it.id == current.id }
+                    if (updated != null && updated != current) {
+                        _currentUser.value = updated
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            MovieRepository.persistedDownloads.collect { persisted ->
+                if (_currentUser.value != null && persisted.isNotEmpty()) {
+                    val merged = persisted.toMutableMap()
+                    _activeDownloads.value.forEach { (k, v) -> merged[k] = v }
+                    _activeDownloads.value = merged
+                }
+            }
+        }
     }
 
     fun login(identifier: String, pass: String) {
@@ -206,6 +273,7 @@ class MovieViewModel : ViewModel() {
             _authError.value = if (_language.value == Language.SW) "Tafadhali jaza nafasi zote!" else "Veuillez remplir tous les champs !"
             return
         }
+        MovieRepository.checkAndExpireVipSubscriptions()
         val user = MovieRepository.authenticateUser(identifier, pass)
         if (user != null) {
             if (user.role == UserRole.DJ && !user.hasDashboardAccess) {
@@ -217,6 +285,7 @@ class MovieViewModel : ViewModel() {
             }
             _currentUser.value = user
             _authError.value = null
+            MovieRepository.saveSession(loggedInUserId = user.id, hasCompletedOnboarding = true)
             when (user.role) {
                 UserRole.ADMIN -> _currentScreen.value = ScreenState.ADMIN_DASHBOARD
                 UserRole.DJ -> _currentScreen.value = ScreenState.DJ_DASHBOARD
@@ -252,6 +321,7 @@ class MovieViewModel : ViewModel() {
         val newUser = MovieRepository.registerUser(name, country, emailOrPhone, pass, ageTier, isEmailVerified)
         _currentUser.value = newUser
         _authError.value = null
+        MovieRepository.saveSession(loggedInUserId = newUser.id, hasCompletedOnboarding = true)
         _currentScreen.value = ScreenState.MAIN_VIEWER
     }
 
@@ -298,6 +368,8 @@ class MovieViewModel : ViewModel() {
 
     fun logout() {
         _currentUser.value = null
+        _activeDownloads.value = emptyMap()
+        MovieRepository.saveSession(loggedInUserId = null)
         _currentScreen.value = ScreenState.BIENVENUE
     }
 
@@ -373,29 +445,11 @@ class MovieViewModel : ViewModel() {
 
     // Vidmate-Style Download Manager with Realtime % Progress
     fun downloadMovie(movie: MovieItem) {
+        MovieRepository.checkAndExpireVipSubscriptions()
         val user = _currentUser.value ?: return
-        if (user.vipTier == VipTier.BURE) {
+        if (!user.isVipActive()) {
             _showVipModal.value = true
             return
-        }
-
-        val isAction = movie.category == MovieCategory.ACTION
-        val isSeries = movie.isSeries
-        if (user.vipTier == VipTier.VIP_PRO) {
-            if (isAction && user.actionDownloadsThisMonth >= 10) {
-                _snackbarMessage.value = if (_language.value == Language.SW)
-                    "Umevuka kikomo cha filamu 10 za Action mwezi huu wa VIP Pro! Boresha kuwa VIP Pro Max."
-                else
-                    "Limite de 10 films d'action atteinte pour VIP Pro ! Passez à VIP Pro Max."
-                return
-            }
-            if (isSeries && user.seriesDownloadsThisMonth >= 5) {
-                _snackbarMessage.value = if (_language.value == Language.SW)
-                    "Umevuka kikomo cha mfululizo 5 mwezi huu wa VIP Pro! Boresha kuwa VIP Pro Max."
-                else
-                    "Limite de 5 séries atteinte pour VIP Pro ! Passez à VIP Pro Max."
-                return
-            }
         }
 
         val taskId = "dl_" + movie.id
@@ -415,6 +469,7 @@ class MovieViewModel : ViewModel() {
         )
 
         _activeDownloads.value = _activeDownloads.value + (taskId to initialTask)
+        MovieRepository.persistDownloadTask(user.id, initialTask)
         _snackbarMessage.value = if (_language.value == Language.SW)
             "Upakuaji umeanza: ${movie.title} (kama Vidmate)"
         else
@@ -441,6 +496,9 @@ class MovieViewModel : ViewModel() {
                     status = if (newPct >= 100) DownloadStatus.COMPLETED else DownloadStatus.DOWNLOADING
                 )
                 _activeDownloads.value = _activeDownloads.value + (taskId to updatedTask)
+                if (newPct >= 100) {
+                    MovieRepository.persistDownloadTask(user.id, updatedTask)
+                }
             }
 
             // Completed: add to downloadedMovieIds in repository
@@ -455,19 +513,29 @@ class MovieViewModel : ViewModel() {
 
     fun pauseDownload(taskId: String) {
         val task = _activeDownloads.value[taskId] ?: return
-        _activeDownloads.value = _activeDownloads.value + (taskId to task.copy(status = DownloadStatus.PAUSED))
+        val paused = task.copy(status = DownloadStatus.PAUSED)
+        _activeDownloads.value = _activeDownloads.value + (taskId to paused)
+        _currentUser.value?.let { MovieRepository.persistDownloadTask(it.id, paused) }
     }
 
     fun resumeDownload(taskId: String) {
         val task = _activeDownloads.value[taskId] ?: return
-        _activeDownloads.value = _activeDownloads.value + (taskId to task.copy(status = DownloadStatus.DOWNLOADING))
+        val resumed = task.copy(status = DownloadStatus.DOWNLOADING)
+        _activeDownloads.value = _activeDownloads.value + (taskId to resumed)
+        _currentUser.value?.let { MovieRepository.persistDownloadTask(it.id, resumed) }
     }
 
     fun cancelDownload(taskId: String) {
         _activeDownloads.value = _activeDownloads.value - taskId
+        _currentUser.value?.let { MovieRepository.removePersistedDownloadTask(it.id, taskId) }
     }
 
-    // Admin Video File Upload with Live % Progress
+    private fun canPublishMovies(user: UserAccount?): Boolean {
+        if (user == null) return false
+        return user.role == UserRole.ADMIN || (user.role == UserRole.DJ && user.hasDashboardAccess)
+    }
+
+    // Admin & Authorized DJ Video File Upload with Live % Progress
     fun adminStartUploadMovie(
         title: String,
         category: MovieCategory,
@@ -480,13 +548,17 @@ class MovieViewModel : ViewModel() {
         isSeries: Boolean,
         episodesCount: Int
     ) {
-        if (_currentUser.value?.role != UserRole.ADMIN) {
+        val publisher = _currentUser.value
+        if (!canPublishMovies(publisher)) {
             _snackbarMessage.value = if (_language.value == Language.SW)
                 "Ruhusa imekataliwa: Mtumiaji wa kawaida haruhusiwi kuweka filamu!"
             else
-                "Accès refusé : Seul l'administrateur peut téléverser des films !"
+                "Accès refusé : Vous n'avez pas l'autorisation de téléverser des films !"
             return
         }
+        val effectiveDjName = if (publisher?.role == UserRole.DJ) {
+            publisher.djStageName ?: publisher.name
+        } else djName
 
         val totalMb = if (isSeries) 520f else 980f
         _adminUploadState.value = AdminUploadState(
@@ -533,7 +605,7 @@ class MovieViewModel : ViewModel() {
                 ageRating = ageRating,
                 descSw = descSw,
                 descFr = descFr,
-                djName = djName,
+                djName = effectiveDjName,
                 videoUrl = "content://media/external/video/moviesw/" + localFileName.replace(" ", "_"),
                 isDriveLink = false,
                 isVipOnly = isVipOnly,
@@ -557,7 +629,7 @@ class MovieViewModel : ViewModel() {
 
     fun updateQuality(quality: VideoQuality) {
         val user = _currentUser.value ?: return
-        if (quality.requiresVip && user.vipTier == VipTier.BURE) {
+        if (quality.requiresVip && !user.isVipActive()) {
             _showVipModal.value = true
             return
         }
@@ -571,11 +643,15 @@ class MovieViewModel : ViewModel() {
 
     fun upgradeVip(tier: VipTier) {
         val user = _currentUser.value ?: return
+        if (tier == VipTier.BURE) {
+            _showVipModal.value = false
+            return
+        }
         if (user.isVipActive()) {
             _snackbarMessage.value = if (_language.value == Language.SW)
                 "Tayari unayo abonnement ya VIP ya mwezi 1 (zimebaki siku ${user.daysRemaining()}). Kitufe kimefungwa hadi mwezi umalizike."
             else
-                "Abonnement VIP actif (${user.daysRemaining()} jours restants). Kitufe kimefungwa."
+                "Abonnement VIP actif (${user.daysRemaining()} jours restants). Le bouton VIP reviendra à l'expiration."
             _showVipModal.value = false
             return
         }
@@ -598,11 +674,18 @@ class MovieViewModel : ViewModel() {
     ) {
         val user = _currentUser.value
         if (user?.role != UserRole.ADMIN) return
-        if (name.isBlank() || email.isBlank() || pass.isBlank() || djStageName.isBlank()) {
+        if (name.isBlank() || email.isBlank() || pass.length < 6 || djStageName.isBlank()) {
             _snackbarMessage.value = if (_language.value == Language.SW)
-                "Tafadhali jaza taarifa zote za DJ."
+                "Tafadhali jaza taarifa zote za DJ (nywila angalau herufi 6)."
             else
-                "Veuillez remplir toutes les informations du DJ."
+                "Veuillez remplir toutes les informations du DJ (mot de passe 6+ car.)."
+            return
+        }
+        if (MovieRepository.findUserByEmail(email) != null) {
+            _snackbarMessage.value = if (_language.value == Language.SW)
+                "Barua pepe hii tayari imesajiliwa!"
+            else
+                "Cet email est déjà utilisé !"
             return
         }
         val newDj = MovieRepository.createDjAccount(name, email, pass, djStageName, country, grantAccess)
@@ -650,7 +733,7 @@ class MovieViewModel : ViewModel() {
         MovieRepository.addComment(movieId, user.name, user.country, user.vipTier, text, rating)
     }
 
-    // Admin Operations (Exclusive to Admin)
+    // Admin & Authorized DJ Operations
     fun adminAddMovie(
         title: String,
         category: MovieCategory,
@@ -664,13 +747,17 @@ class MovieViewModel : ViewModel() {
         isSeries: Boolean,
         episodesCount: Int
     ) {
-        if (_currentUser.value?.role != UserRole.ADMIN) {
+        val publisher = _currentUser.value
+        if (!canPublishMovies(publisher)) {
             _snackbarMessage.value = if (_language.value == Language.SW)
                 "Ruhusa imekataliwa: Mtumiaji wa kawaida haruhusiwi kuweka filamu!"
             else
-                "Accès refusé : Seul l'administrateur peut publier des films !"
+                "Accès refusé : Seul l'administrateur ou un DJ autorisé peut publier des films !"
             return
         }
+        val effectiveDjName = if (publisher?.role == UserRole.DJ) {
+            publisher.djStageName ?: publisher.name
+        } else djName
 
         val episodesList = if (isSeries) {
             (1..episodesCount).map { epNum ->
@@ -679,7 +766,7 @@ class MovieViewModel : ViewModel() {
         } else emptyList()
 
         MovieRepository.addMovie(
-            title, category, ageRating, descSw, descFr, djName, videoUrl, isDriveLink, isVipOnly, isSeries, episodesList
+            title, category, ageRating, descSw, descFr, effectiveDjName, videoUrl, isDriveLink, isVipOnly, isSeries, episodesList
         )
         _snackbarMessage.value = if (_language.value == Language.SW)
             "Filamu '$title' imechapishwa kikamilifu!"
@@ -688,14 +775,20 @@ class MovieViewModel : ViewModel() {
     }
 
     fun adminDeleteMovie(movieId: String) {
-        if (_currentUser.value?.role != UserRole.ADMIN) {
+        val requester = _currentUser.value
+        val movie = movies.value.find { it.id == movieId }
+        val isAdmin = requester?.role == UserRole.ADMIN
+        val isAuthorizedDjOwner = requester?.role == UserRole.DJ &&
+            requester.hasDashboardAccess &&
+            movie?.djName.equals(requester.djStageName ?: requester.name, ignoreCase = true)
+
+        if (!isAdmin && !isAuthorizedDjOwner) {
             _snackbarMessage.value = if (_language.value == Language.SW)
                 "Ruhusa imekataliwa: Mtumiaji wa kawaida haruhusiwi kufuta filamu!"
             else
-                "Accès refusé : Seul l'administrateur peut supprimer des films !"
+                "Accès refusé : Vous n'êtes pas autorisé à supprimer ce film !"
             return
         }
-        val movie = movies.value.find { it.id == movieId }
         MovieRepository.deleteMovie(movieId)
         _snackbarMessage.value = if (_language.value == Language.SW)
             "Filamu '${movie?.title ?: ""}' imefutwa kikamilifu kwenye app!"

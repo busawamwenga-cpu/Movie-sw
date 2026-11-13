@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.*
 import com.example.ui.theme.*
-import com.example.viewmodel.AdminUploadState
+import com.example.model.AdminUploadState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -540,7 +540,7 @@ private fun DjPublishTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "${uploadState.uploadedMb.toInt()} MB / ${uploadState.totalMb.toInt()} MB (${uploadState.speed})",
+                            text = "${uploadState.mbUploaded.toInt()} MB / ${uploadState.totalMb.toInt()} MB (${uploadState.speed})",
                             fontSize = 11.sp,
                             color = MovieTextSecondary
                         )

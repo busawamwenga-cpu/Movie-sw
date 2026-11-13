@@ -222,8 +222,8 @@ fun HomeScreen(
             }
         }
 
-        // 2. VIP Alert Banner for Bure Users
-        if (currentUser?.vipTier == VipTier.BURE) {
+        // 2. VIP Alert Banner for Bure / Expired Users
+        if (currentUser?.isVipActive() != true) {
             item {
                 Box(
                     modifier = Modifier
@@ -275,7 +275,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "VIP $2.99",
+                                text = "VIP $3.99",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Black,
                                 color = Color.Black
@@ -444,7 +444,7 @@ fun MovieCard(
     language: Language,
     onClick: () -> Unit
 ) {
-    val isLocked = movie.isVipOnly && (currentUser?.vipTier == VipTier.BURE)
+    val isLocked = movie.isVipOnly && (currentUser?.isVipActive() != true)
 
     Card(
         modifier = Modifier

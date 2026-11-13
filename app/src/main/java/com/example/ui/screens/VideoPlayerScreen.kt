@@ -49,7 +49,7 @@ fun VideoPlayerScreen(
     onVipUpgradeClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val isLocked = movie.isVipOnly && (currentUser?.vipTier == VipTier.BURE)
+    val isLocked = movie.isVipOnly && (currentUser?.isVipActive() != true)
 
     var isPlaying by remember { mutableStateOf(!isLocked) }
     var currentProgressSeconds by remember { mutableIntStateOf(14) }

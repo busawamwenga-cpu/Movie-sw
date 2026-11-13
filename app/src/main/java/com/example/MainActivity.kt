@@ -28,6 +28,7 @@ import com.example.viewmodel.ScreenState
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.example.data.MovieRepository.initialize(applicationContext)
         enableEdgeToEdge()
 
         setContent {
@@ -132,7 +133,7 @@ fun MovieSwApp(
                 ScreenState.SPLASH -> {
                     SplashScreen(
                         language = language,
-                        onFinish = { viewModel.navigateTo(ScreenState.ONBOARDING) }
+                        onFinish = { viewModel.onSplashFinished() }
                     )
                 }
 
@@ -140,7 +141,7 @@ fun MovieSwApp(
                     OnboardingScreen(
                         language = language,
                         onLanguageToggle = { viewModel.toggleLanguage() },
-                        onFinish = { viewModel.navigateTo(ScreenState.BIENVENUE) }
+                        onFinish = { viewModel.completeOnboarding() }
                     )
                 }
 
@@ -285,8 +286,45 @@ fun MovieSwApp(
                             onChangeUserVip = { userId, tier -> viewModel.adminChangeUserVip(userId, tier) },
                             onDeleteUser = { userId -> viewModel.adminDeleteUser(userId) },
                             onBroadcastNotif = { tSw, tFr, mSw, mFr -> viewModel.adminBroadcast(tSw, tFr, mSw, mFr) },
+                            onCreateDjAccount = { name, email, pass, stage, country, access ->
+                                viewModel.createDjAccount(name, email, pass, stage, country, access)
+                            },
+                            onToggleDjAccess = { userId, hasAccess -> viewModel.toggleDjAccess(userId, hasAccess) },
+                            onCancelUserVip = { userId -> viewModel.cancelUserVip(userId) },
+                            onRenewUserVip = { userId, tier -> viewModel.renewUserVip(userId, tier) },
                             onLanguageToggle = { viewModel.toggleLanguage() },
                             onExitAdmin = { viewModel.navigateTo(ScreenState.MAIN_VIEWER) }
+                        )
+                    }
+                }
+
+                ScreenState.DJ_DASHBOARD -> {
+                    val user = currentUser
+                    if (user?.role != UserRole.DJ || !user.hasDashboardAccess) {
+                        LaunchedEffect(user) {
+                            viewModel.showSnackbar(
+                                if (language == Language.SW)
+                                    "Access imefungwa: Wasiliana na Admin (Yesu Kishilo) kupata idhini ya DJ Dashboard."
+                                else
+                                    "Accès refusé : Demandez l'accès à l'administrateur."
+                            )
+                            viewModel.navigateTo(if (user != null) ScreenState.MAIN_VIEWER else ScreenState.BIENVENUE)
+                        }
+                    } else {
+                        DjDashboardScreen(
+                            language = language,
+                            currentDj = user,
+                            allMovies = allMovies,
+                            uploadState = adminUploadState,
+                            onLanguageToggle = { viewModel.toggleLanguage() },
+                            onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount ->
+                                viewModel.adminAddMovie(title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount)
+                            },
+                            onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount ->
+                                viewModel.adminStartUploadMovie(title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount)
+                            },
+                            onDeleteMovie = { movieId -> viewModel.adminDeleteMovie(movieId) },
+                            onLogout = { viewModel.logout() }
                         )
                     }
                 }

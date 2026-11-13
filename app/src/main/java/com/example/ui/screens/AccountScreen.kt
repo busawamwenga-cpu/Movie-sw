@@ -42,7 +42,8 @@ fun AccountScreen(
 ) {
     val context = LocalContext.current
     val currentQuality = currentUser?.preferredQuality ?: VideoQuality.P360
-    val userVip = currentUser?.vipTier ?: VipTier.BURE
+    val isVipActive = currentUser?.isVipActive() == true
+    val userVip = if (isVipActive) currentUser!!.vipTier else VipTier.BURE
     var showVerifyInput by remember { mutableStateOf(false) }
     var verifyCodeInput by remember { mutableStateOf("") }
 
@@ -120,8 +121,7 @@ fun AccountScreen(
 
                             Surface(
                                 color = when (userVip) {
-                                    VipTier.VIP_PRO_MAX -> MovieGold
-                                    VipTier.VIP_PRO -> MovieBlueVip
+                                    VipTier.VIP_PRO -> MovieGold
                                     VipTier.BURE -> MovieSurfaceVariant
                                 },
                                 shape = RoundedCornerShape(4.dp)
@@ -130,7 +130,7 @@ fun AccountScreen(
                                     text = userVip.titleSw,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = if (userVip == VipTier.VIP_PRO_MAX) Color.Black else Color.White,
+                                    color = if (userVip == VipTier.VIP_PRO) Color.Black else Color.White,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -300,54 +300,105 @@ fun AccountScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Passer à VIP Promotion Card
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onVipUpgradeClick() }
-                    .testTag("account_passer_vip_card"),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MovieSurfaceVariant),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MovieGold)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+        // Passer à VIP Promotion Card (Removed while 1-month VIP is active; returns on expiry)
+        if (!isVipActive) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onVipUpgradeClick() }
+                        .testTag("account_passer_vip_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MovieSurfaceVariant),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MovieGold)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Star, contentDescription = null, tint = MovieGold, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Star, contentDescription = null, tint = MovieGold, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = Strings.upgradeToVip(language),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = MovieGold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = Strings.upgradeToVip(language),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = MovieGold
+                                text = if (language == Language.SW)
+                                    "Fungua filamu zote, 1080p/8K na upakuaji wa kifaa bila kikomo (Mwezi 1)."
+                                else
+                                    "Accédez à tous les films, 1080p/8K et téléchargements illimités (1 mois).",
+                                fontSize = 12.sp,
+                                color = MovieTextSecondary
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (language == Language.SW)
-                                "Fungua filamu zote, 1080p/8K na upakuaji wa kifaa bila kikomo."
-                            else
-                                "Accédez à tous les films, 1080p/8K et téléchargements illimités.",
-                            fontSize = 12.sp,
-                            color = MovieTextSecondary
-                        )
-                    }
 
-                    Button(
-                        onClick = onVipUpgradeClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("VIP", color = Color.Black, fontWeight = FontWeight.Black)
+                        Button(
+                            onClick = onVipUpgradeClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("VIP", color = Color.Black, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(20.dp))
             }
-            Spacer(modifier = Modifier.height(20.dp))
+        } else {
+            item {
+                Surface(
+                    color = MovieSurface,
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MovieGreenSuccess),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("account_active_vip_status")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WorkspacePremium,
+                            contentDescription = null,
+                            tint = MovieGold,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (language == Language.SW)
+                                    "VIP Imewashwa (${userVip.titleSw})"
+                                else
+                                    "VIP Actif (${userVip.titleFr})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MovieGoldLight
+                            )
+                            val daysLeft = currentUser?.daysRemaining() ?: 30
+                            Text(
+                                text = if (currentUser?.role == UserRole.ADMIN) {
+                                    if (language == Language.SW) "Akaunti ya Admin: Haina kikomo." else "Compte Admin : Illimité."
+                                } else {
+                                    if (language == Language.SW)
+                                        "Abonnement ya mwezi 1: Siku $daysLeft zimebaki. Kitufe cha VIP kimerudishwa hadi mwezi uishe."
+                                    else
+                                        "Abonnement 1 mois : $daysLeft jours restants. Le bouton VIP réapparaîtra à l'expiration."
+                                },
+                                fontSize = 12.sp,
+                                color = MovieTextSecondary
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+            }
         }
 
         // Section: "Ubora wa Video" (144p, 360p, 750p, 1080p, 8K)
@@ -361,9 +412,9 @@ fun AccountScreen(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = if (language == Language.SW)
-                    "Ubora wa 750p, 1080p na 8K unahitaji akaunti ya VIP Pro au VIP Pro Max."
+                    "Ubora wa 750p, 1080p na 8K unahitaji akaunti ya VIP Pro."
                 else
-                    "La qualité 750p, 1080p et 8K nécessite un compte VIP Pro ou VIP Pro Max.",
+                    "La qualité 750p, 1080p et 8K nécessite un compte VIP Pro.",
                 fontSize = 12.sp,
                 color = MovieTextSecondary
             )

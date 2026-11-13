@@ -100,9 +100,9 @@ object Strings {
     else
         "Quota ce mois : Films d'action : $actionLeft/10 | Séries : $seriesLeft/5"
     fun downloadQuotaUnlimited(lang: Language) = if (lang == Language.SW)
-        "Upakuaji Bila Kikomo (VIP Pro Max)"
+        "Upakuaji Bila Kikomo (VIP Pro)"
     else
-        "Téléchargements Illimités (VIP Pro Max)"
+        "Téléchargements Illimités (VIP Pro)"
     fun downloadQuotaFree(lang: Language) = if (lang == Language.SW)
         "Akaunti ya Bure haina upakuaji. Boresha kuwa VIP Pro ili kupakua."
     else

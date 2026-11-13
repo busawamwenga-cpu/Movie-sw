@@ -40,20 +40,10 @@ enum class VipTier(
         id = "vip_pro",
         titleSw = "VIP Pro",
         titleFr = "VIP Pro",
-        priceSw = "2.99 $ / mwezi",
-        priceFr = "2.99 $ / mois",
-        maxQuality = VideoQuality.P1080,
-        actionDownloadsLimit = 10,
-        seriesDownloadsLimit = 5
-    ),
-    VIP_PRO_MAX(
-        id = "vip_pro_max",
-        titleSw = "VIP Pro Max",
-        titleFr = "VIP Pro Max",
-        priceSw = "5.99 $ / mwezi",
-        priceFr = "5.99 $ / mois",
+        priceSw = "3.99 $ / mwezi",
+        priceFr = "3.99 $ / mois",
         maxQuality = VideoQuality.P8K,
-        actionDownloadsLimit = 9999, // unlimited
+        actionDownloadsLimit = 9999,
         seriesDownloadsLimit = 9999
     )
 }

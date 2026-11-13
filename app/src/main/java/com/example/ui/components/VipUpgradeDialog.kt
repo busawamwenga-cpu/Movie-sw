@@ -36,7 +36,11 @@ fun VipUpgradeDialog(
     onDismiss: () -> Unit,
     onSelectPlan: (VipTier) -> Unit
 ) {
-    var selectedTier by remember { mutableStateOf(currentUser?.vipTier ?: VipTier.VIP_PRO) }
+    var selectedTier by remember {
+        mutableStateOf(
+            if (currentUser?.isVipActive() == true) currentUser.vipTier else VipTier.VIP_PRO
+        )
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -125,49 +129,25 @@ fun VipUpgradeDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Tier 2: VIP Pro ($2.99 / mwezi)
+                // Tier 2: VIP Pro ($3.99 / mwezi)
                 PlanCard(
                     title = "VIP Pro",
-                    price = if (language == Language.SW) "2.99 $ / mwezi" else "2.99 $ / mois",
+                    price = if (language == Language.SW) "3.99 $ / mwezi" else "3.99 $ / mois",
                     badge = if (language == Language.SW) "MAARUFU ZAIDI" else "POPULAIRE",
                     features = if (language == Language.SW) listOf(
                         "Tazama filamu & mfululizo zote (Hata za Admin)",
-                        "Ubora wa juu wa 1080p Full HD",
-                        "Pakua filamu 10 za Action kwa mwezi",
-                        "Pakua mfululizo (series) 5 kwa mwezi"
+                        "Ubora wa juu wa 1080p Full HD & 8K Ultra HD",
+                        "Upakuaji BILA KIKOMO kwenye kifaa chako",
+                        "Usaidizi wa kipaumbele wa VIP kwa mwezi 1"
                     ) else listOf(
                         "Accès complet aux films et séries (incluant admin)",
-                        "Haute définition 1080p Full HD",
-                        "Téléchargez 10 films d'action par mois",
-                        "Téléchargez 5 séries par mois"
+                        "Haute définition 1080p Full HD & 8K Ultra HD",
+                        "Téléchargements ILLIMITÉS sur l'appareil",
+                        "Support VIP prioritaire pendant 1 mois"
                     ),
                     isSelected = selectedTier == VipTier.VIP_PRO,
                     isCurrent = currentUser?.vipTier == VipTier.VIP_PRO,
                     onSelect = { selectedTier = VipTier.VIP_PRO },
-                    accentColor = MovieBlueVip
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Tier 3: VIP Pro Max ($5.99 / mwezi)
-                PlanCard(
-                    title = "VIP Pro Max",
-                    price = if (language == Language.SW) "5.99 $ / mwezi" else "5.99 $ / mois",
-                    badge = if (language == Language.SW) "BORA KABISA" else "ULTIME",
-                    features = if (language == Language.SW) listOf(
-                        "Kila kitu kimefunguliwa 100%",
-                        "Ubora wa kipekee wa 8K Ultra HD",
-                        "Upakuaji BILA KIKOMO kwenye simu",
-                        "Usaidizi wa kipaumbele wa VIP"
-                    ) else listOf(
-                        "Déblocage intégral à 100%",
-                        "Qualité suprême 8K Ultra HD",
-                        "Téléchargements ILLIMITÉS sur l'appareil",
-                        "Support VIP prioritaire"
-                    ),
-                    isSelected = selectedTier == VipTier.VIP_PRO_MAX,
-                    isCurrent = currentUser?.vipTier == VipTier.VIP_PRO_MAX,
-                    onSelect = { selectedTier = VipTier.VIP_PRO_MAX },
                     accentColor = MovieGold
                 )
 
@@ -196,7 +176,7 @@ fun VipUpgradeDialog(
                         .height(50.dp)
                         .testTag("confirm_vip_button"),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedTier == VipTier.VIP_PRO_MAX) MovieGold else MovieRedPrimary
+                        containerColor = if (selectedTier == VipTier.VIP_PRO) MovieGold else MovieRedPrimary
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -204,8 +184,8 @@ fun VipUpgradeDialog(
                         text = if (currentUser?.vipTier == selectedTier)
                             (if (language == Language.SW) "Mpango Wako wa Sasa" else "Votre Forfait Actuel")
                         else
-                            (if (language == Language.SW) "Washa ${selectedTier.titleSw} Sasa" else "Activer ${selectedTier.titleFr}"),
-                        color = if (selectedTier == VipTier.VIP_PRO_MAX) Color.Black else Color.White,
+                            (if (language == Language.SW) "Washa ${selectedTier.titleSw} ($3.99)" else "Activer ${selectedTier.titleFr} (3.99 $)"),
+                        color = if (selectedTier == VipTier.VIP_PRO) Color.Black else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )

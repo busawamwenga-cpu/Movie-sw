@@ -118,7 +118,7 @@ fun AlbumScreen(
 
         // Quota Bar (for downloads)
         item {
-            val userVip = currentUser?.vipTier ?: VipTier.BURE
+            val userVip = if (currentUser?.isVipActive() == true) currentUser.vipTier else VipTier.BURE
             Surface(
                 color = MovieCardBg,
                 shape = RoundedCornerShape(12.dp),
@@ -151,8 +151,7 @@ fun AlbumScreen(
 
                         Surface(
                             color = when (userVip) {
-                                VipTier.VIP_PRO_MAX -> MovieGold
-                                VipTier.VIP_PRO -> MovieBlueVip
+                                VipTier.VIP_PRO -> MovieGold
                                 VipTier.BURE -> MovieSurfaceVariant
                             },
                             shape = RoundedCornerShape(6.dp)
@@ -161,7 +160,7 @@ fun AlbumScreen(
                                 text = userVip.titleSw,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (userVip == VipTier.VIP_PRO_MAX) Color.Black else Color.White,
+                                color = if (userVip == VipTier.VIP_PRO) Color.Black else Color.White,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -171,16 +170,6 @@ fun AlbumScreen(
 
                     when (userVip) {
                         VipTier.VIP_PRO -> {
-                            val actionLeft = (10 - (currentUser?.actionDownloadsThisMonth ?: 0)).coerceAtLeast(0)
-                            val seriesLeft = (5 - (currentUser?.seriesDownloadsThisMonth ?: 0)).coerceAtLeast(0)
-                            Text(
-                                text = Strings.downloadQuotaPro(language, actionLeft, seriesLeft),
-                                fontSize = 12.sp,
-                                color = MovieGoldLight,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        VipTier.VIP_PRO_MAX -> {
                             Text(
                                 text = Strings.downloadQuotaUnlimited(language),
                                 fontSize = 12.sp,
