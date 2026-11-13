@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.Language
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
 fun MovieSwApp(
     viewModel: MovieViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val language by viewModel.language.collectAsStateWithLifecycle()
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val authMode by viewModel.authMode.collectAsStateWithLifecycle()
@@ -68,6 +70,10 @@ fun MovieSwApp(
     val sentVerifyEmailOtp by viewModel.sentVerifyEmailOtp.collectAsStateWithLifecycle()
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     val adminUploadState by viewModel.adminUploadState.collectAsStateWithLifecycle()
+    val isAuthLoading by viewModel.isAuthLoading.collectAsStateWithLifecycle()
+    val isCatalogLoading by viewModel.isCatalogLoading.collectAsStateWithLifecycle()
+    val isActionLoading by viewModel.isActionLoading.collectAsStateWithLifecycle()
+    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -166,6 +172,7 @@ fun MovieSwApp(
                         sentOtpCode = sentOtpCode,
                         otpTargetEmail = otpTargetEmail,
                         sentVerifyEmailOtp = sentVerifyEmailOtp,
+                        isLoading = isAuthLoading,
                         onSwitchMode = { viewModel.setAuthMode(it) },
                         onBack = { viewModel.navigateTo(ScreenState.BIENVENUE) },
                         onLogin = { id, pass -> viewModel.login(id, pass) },
@@ -189,6 +196,8 @@ fun MovieSwApp(
                             availableDjs = availableDjs,
                             selectedCategory = selectedCategory,
                             selectedDj = selectedDj,
+                            isLoading = isCatalogLoading,
+                            onRefresh = { viewModel.refreshCatalog() },
                             onSelectCategory = { viewModel.setCategory(it) },
                             onSelectDj = { viewModel.setDj(it) },
                             onMovieClick = { viewModel.openMovie(it) },
@@ -204,6 +213,7 @@ fun MovieSwApp(
                             selectedCategory = selectedCategory,
                             selectedDj = selectedDj,
                             searchQuery = searchQuery,
+                            isLoading = isCatalogLoading,
                             onSearchChange = { viewModel.setSearchQuery(it) },
                             onSelectCategory = { viewModel.setCategory(it) },
                             onSelectDj = { viewModel.setDj(it) },
@@ -215,6 +225,7 @@ fun MovieSwApp(
                             currentUser = currentUser,
                             allMovies = allMovies,
                             activeDownloads = activeDownloads,
+                            isLoading = isCatalogLoading,
                             onMovieClick = { viewModel.openMovie(it) },
                             onRemoveFavorite = { viewModel.toggleFavorite(it) },
                             onVipUpgradeClick = { viewModel.showVipModal(true) }
@@ -225,13 +236,18 @@ fun MovieSwApp(
                             currentUser = currentUser,
                             socialLinks = socialLinks,
                             sentVerifyEmailOtp = sentVerifyEmailOtp,
+                            isLoading = isActionLoading,
+                            appUpdateState = appUpdateState,
                             onLanguageToggle = { viewModel.toggleLanguage() },
                             onSelectQuality = { viewModel.updateQuality(it) },
                             onVipUpgradeClick = { viewModel.showVipModal(true) },
                             onAdminClick = { viewModel.navigateTo(ScreenState.ADMIN_DASHBOARD) },
                             onLogout = { viewModel.logout() },
                             onSendEmailVerification = { viewModel.sendEmailVerificationOtp(it) },
-                            onVerifyEmail = { viewModel.verifyCurrentUserEmail(it) }
+                            onVerifyEmail = { viewModel.verifyCurrentUserEmail(it) },
+                            onCheckForUpdates = { viewModel.checkForAppUpdates() },
+                            onDownloadAndInstallUpdate = { info -> viewModel.startAppUpdateDownload(context, info) },
+                            onLaunchApkInstall = { file -> com.example.util.AppUpdateManager.launchApkInstaller(context, file) }
                         )
                     }
                 }
@@ -276,16 +292,63 @@ fun MovieSwApp(
                             movies = allMovies,
                             socialLinks = socialLinks,
                             adminUploadState = adminUploadState,
-                            onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount ->
-                                viewModel.adminAddMovie(title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount)
+                            isActionLoading = isActionLoading,
+                            onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount, sendNotif ->
+                                viewModel.adminAddMovie(
+                                    title = title,
+                                    category = cat,
+                                    ageRating = age,
+                                    descSw = descSw,
+                                    descFr = descFr,
+                                    djName = dj,
+                                    videoUrl = url,
+                                    isDriveLink = isDrive,
+                                    isVipOnly = isVip,
+                                    isSeries = isSeries,
+                                    episodesCount = epCount,
+                                    sendNotification = sendNotif,
+                                    context = context
+                                )
                             },
-                            onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount ->
-                                viewModel.adminStartUploadMovie(title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount)
+                            onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount, sendNotif ->
+                                viewModel.adminStartUploadMovie(
+                                    title = title,
+                                    category = cat,
+                                    ageRating = age,
+                                    descSw = descSw,
+                                    descFr = descFr,
+                                    djName = dj,
+                                    localFileName = file,
+                                    isVipOnly = isVip,
+                                    isSeries = isSeries,
+                                    episodesCount = epCount,
+                                    sendNotification = sendNotif,
+                                    context = context
+                                )
+                            },
+                            onImportPickedVideo = { uri, fileName, sizeMb, posterUri, title, cat, age, descSw, descFr, dj, isVip, isSeries, epCount, sendNotif ->
+                                viewModel.adminImportPickedVideo(
+                                    context = context,
+                                    videoUri = uri,
+                                    fileName = fileName,
+                                    expectedSizeMb = sizeMb,
+                                    posterUri = posterUri,
+                                    title = title,
+                                    category = cat,
+                                    ageRating = age,
+                                    descSw = descSw,
+                                    descFr = descFr,
+                                    djName = dj,
+                                    isVipOnly = isVip,
+                                    isSeries = isSeries,
+                                    episodesCount = epCount,
+                                    sendNotification = sendNotif
+                                )
                             },
                             onDeleteMovie = { movieId -> viewModel.adminDeleteMovie(movieId) },
                             onChangeUserVip = { userId, tier -> viewModel.adminChangeUserVip(userId, tier) },
                             onDeleteUser = { userId -> viewModel.adminDeleteUser(userId) },
-                            onBroadcastNotif = { tSw, tFr, mSw, mFr -> viewModel.adminBroadcast(tSw, tFr, mSw, mFr) },
+                            onBroadcastNotif = { tSw, tFr, mSw, mFr -> viewModel.adminBroadcast(tSw, tFr, mSw, mFr, context) },
                             onCreateDjAccount = { name, email, pass, stage, country, access ->
                                 viewModel.createDjAccount(name, email, pass, stage, country, access)
                             },
@@ -304,7 +367,7 @@ fun MovieSwApp(
                         LaunchedEffect(user) {
                             viewModel.showSnackbar(
                                 if (language == Language.SW)
-                                    "Access imefungwa: Wasiliana na Admin (Yesu Kishilo) kupata idhini ya DJ Dashboard."
+                                    "Access imefungwa: Wasiliana na Admin kupata idhini ya DJ Dashboard."
                                 else
                                     "Accès refusé : Demandez l'accès à l'administrateur."
                             )
@@ -318,10 +381,56 @@ fun MovieSwApp(
                             uploadState = adminUploadState,
                             onLanguageToggle = { viewModel.toggleLanguage() },
                             onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount ->
-                                viewModel.adminAddMovie(title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount)
+                                viewModel.adminAddMovie(
+                                    title = title,
+                                    category = cat,
+                                    ageRating = age,
+                                    descSw = descSw,
+                                    descFr = descFr,
+                                    djName = dj,
+                                    videoUrl = url,
+                                    isDriveLink = isDrive,
+                                    isVipOnly = isVip,
+                                    isSeries = isSeries,
+                                    episodesCount = epCount,
+                                    sendNotification = true,
+                                    context = context
+                                )
                             },
                             onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount ->
-                                viewModel.adminStartUploadMovie(title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount)
+                                viewModel.adminStartUploadMovie(
+                                    title = title,
+                                    category = cat,
+                                    ageRating = age,
+                                    descSw = descSw,
+                                    descFr = descFr,
+                                    djName = dj,
+                                    localFileName = file,
+                                    isVipOnly = isVip,
+                                    isSeries = isSeries,
+                                    episodesCount = epCount,
+                                    sendNotification = true,
+                                    context = context
+                                )
+                            },
+                            onImportPickedVideo = { uri, fileName, sizeMb, posterUri, title, cat, age, descSw, descFr, dj, isVip, isSeries, epCount, sendNotif ->
+                                viewModel.adminImportPickedVideo(
+                                    context = context,
+                                    videoUri = uri,
+                                    fileName = fileName,
+                                    expectedSizeMb = sizeMb,
+                                    posterUri = posterUri,
+                                    title = title,
+                                    category = cat,
+                                    ageRating = age,
+                                    descSw = descSw,
+                                    descFr = descFr,
+                                    djName = dj,
+                                    isVipOnly = isVip,
+                                    isSeries = isSeries,
+                                    episodesCount = epCount,
+                                    sendNotification = sendNotif
+                                )
                             },
                             onDeleteMovie = { movieId -> viewModel.adminDeleteMovie(movieId) },
                             onLogout = { viewModel.logout() }

@@ -2,7 +2,8 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.Image
+import android.widget.Toast
+import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,15 +26,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.model.*
+import com.example.ui.components.MoviePosterImage
 import com.example.ui.theme.*
 import com.example.util.Strings
 import kotlinx.coroutines.delay
+import java.io.File
 
 @Composable
 fun VideoPlayerScreen(
@@ -52,21 +54,58 @@ fun VideoPlayerScreen(
     val isLocked = movie.isVipOnly && (currentUser?.isVipActive() != true)
 
     var isPlaying by remember { mutableStateOf(!isLocked) }
-    var currentProgressSeconds by remember { mutableIntStateOf(14) }
-    val totalSeconds = movie.durationMinutes * 60
+    var currentProgressSeconds by remember { mutableIntStateOf(0) }
+    var totalSeconds by remember(movie.id) { mutableIntStateOf((movie.durationMinutes * 60).coerceAtLeast(60)) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var newCommentText by remember { mutableStateOf("") }
     var newRating by remember { mutableIntStateOf(5) }
     var selectedEpisode by remember { mutableIntStateOf(1) }
 
-    // Simulating player time counter when playing
-    LaunchedEffect(isPlaying) {
+    val activeVideoUrl = remember(movie, selectedEpisode) {
+        if (movie.isSeries && movie.episodes.isNotEmpty()) {
+            movie.episodes.find { it.episodeNumber == selectedEpisode }?.driveLink ?: movie.videoUrl
+        } else {
+            movie.videoUrl
+        }
+    }
+
+    val isRealLocalVideo = remember(activeVideoUrl) {
+        if (activeVideoUrl.startsWith("file://")) {
+            val path = Uri.parse(activeVideoUrl).path
+            !path.isNullOrBlank() && File(path).exists()
+        } else {
+            false
+        }
+    }
+
+    var isBuffering by remember(movie.id, selectedEpisode) { mutableStateOf(!isLocked) }
+    var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
+
+    LaunchedEffect(movie.id, selectedEpisode, isLocked, isRealLocalVideo) {
+        if (!isLocked && !isRealLocalVideo) {
+            isBuffering = true
+            delay(500)
+            isBuffering = false
+        }
+    }
+
+    // Simulating player time counter when playing fallback/Drive preview or syncing local VideoView
+    LaunchedEffect(isPlaying, isRealLocalVideo, isBuffering) {
         while (isPlaying) {
             delay(1000)
-            if (currentProgressSeconds < totalSeconds) {
-                currentProgressSeconds++
-            } else {
-                isPlaying = false
+            if (isRealLocalVideo) {
+                val vv = videoViewRef
+                if (vv != null && vv.isPlaying) {
+                    currentProgressSeconds = (vv.currentPosition / 1000).coerceAtLeast(0)
+                    val durSec = vv.duration / 1000
+                    if (durSec > 0) totalSeconds = durSec
+                }
+            } else if (!isBuffering) {
+                if (currentProgressSeconds < totalSeconds) {
+                    currentProgressSeconds++
+                } else {
+                    isPlaying = false
+                }
             }
         }
     }
@@ -181,13 +220,44 @@ fun VideoPlayerScreen(
                         }
                     }
                 } else {
-                    // Active Player
-                    Image(
-                        painter = painterResource(id = movie.posterRes ?: R.drawable.img_onboarding_1),
-                        contentDescription = movie.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    // Active Player (Real local Android file VideoView or Poster Preview)
+                    if (isRealLocalVideo) {
+                        AndroidView(
+                            factory = { ctx ->
+                                VideoView(ctx).apply {
+                                    videoViewRef = this
+                                    setVideoURI(Uri.parse(activeVideoUrl))
+                                    setOnPreparedListener { mp ->
+                                        isBuffering = false
+                                        val durSec = (mp.duration / 1000).coerceAtLeast(1)
+                                        totalSeconds = durSec
+                                        if (isPlaying) start()
+                                    }
+                                    setOnCompletionListener {
+                                        isPlaying = false
+                                    }
+                                    setOnErrorListener { _, _, _ ->
+                                        isBuffering = false
+                                        true
+                                    }
+                                }
+                            },
+                            update = { view ->
+                                if (isPlaying && !view.isPlaying && !isBuffering) {
+                                    view.start()
+                                } else if (!isPlaying && view.isPlaying) {
+                                    view.pause()
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        MoviePosterImage(
+                            movie = movie,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
                     // Dark overlay for controls
                     Box(
@@ -204,53 +274,82 @@ fun VideoPlayerScreen(
                             )
                     )
 
-                    // Center Play / Pause / Replay Controls
-                    Row(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // -10s
-                        IconButton(
-                            onClick = {
-                                currentProgressSeconds = (currentProgressSeconds - 10).coerceAtLeast(0)
-                            },
+                    if (isBuffering) {
+                        Column(
                             modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
+                                .align(Alignment.Center)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("player_loading_indicator"),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(Icons.Default.Replay10, contentDescription = "-10s", tint = Color.White)
-                        }
-
-                        // Play/Pause
-                        IconButton(
-                            onClick = { isPlaying = !isPlaying },
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(MovieRedPrimary)
-                                .testTag("player_play_pause_button")
-                        ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(34.dp),
+                                color = MovieGold,
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (language == Language.SW) "Inapakia video..." else "Chargement de la vidéo...",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
                             )
                         }
-
-                        // +10s
-                        IconButton(
-                            onClick = {
-                                currentProgressSeconds = (currentProgressSeconds + 10).coerceAtMost(totalSeconds)
-                            },
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
+                    } else {
+                        // Center Play / Pause / Replay Controls
+                        Row(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Forward10, contentDescription = "+10s", tint = Color.White)
+                            // -10s
+                            IconButton(
+                                onClick = {
+                                    val target = (currentProgressSeconds - 10).coerceAtLeast(0)
+                                    currentProgressSeconds = target
+                                    if (isRealLocalVideo) videoViewRef?.seekTo(target * 1000)
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                            ) {
+                                Icon(Icons.Default.Replay10, contentDescription = "-10s", tint = Color.White)
+                            }
+
+                            // Play/Pause
+                            IconButton(
+                                onClick = { isPlaying = !isPlaying },
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(MovieRedPrimary)
+                                    .testTag("player_play_pause_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            // +10s
+                            IconButton(
+                                onClick = {
+                                    val target = (currentProgressSeconds + 10).coerceAtMost(totalSeconds)
+                                    currentProgressSeconds = target
+                                    if (isRealLocalVideo) videoViewRef?.seekTo(target * 1000)
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                            ) {
+                                Icon(Icons.Default.Forward10, contentDescription = "+10s", tint = Color.White)
+                            }
                         }
                     }
 
@@ -263,9 +362,13 @@ fun VideoPlayerScreen(
                     ) {
                         // Slider seekbar
                         Slider(
-                            value = currentProgressSeconds.toFloat(),
-                            onValueChange = { currentProgressSeconds = it.toInt() },
-                            valueRange = 0f..totalSeconds.toFloat(),
+                            value = currentProgressSeconds.toFloat().coerceIn(0f, totalSeconds.toFloat().coerceAtLeast(1f)),
+                            onValueChange = {
+                                val target = it.toInt()
+                                currentProgressSeconds = target
+                                if (isRealLocalVideo) videoViewRef?.seekTo(target * 1000)
+                            },
+                            valueRange = 0f..totalSeconds.toFloat().coerceAtLeast(1f),
                             colors = SliderDefaults.colors(
                                 thumbColor = MovieRedPrimary,
                                 activeTrackColor = MovieRedPrimary,
@@ -400,11 +503,29 @@ fun VideoPlayerScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Google Drive fallback button (Prompt requirement!)
+                        // Google Drive fallback or APK Local File button
+                        val isWebLink = activeVideoUrl.startsWith("http://") || activeVideoUrl.startsWith("https://")
                         Button(
                             onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(movie.videoUrl))
-                                context.startActivity(intent)
+                                if (isWebLink) {
+                                    runCatching {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(activeVideoUrl))
+                                        context.startActivity(intent)
+                                    }
+                                } else if (isRealLocalVideo) {
+                                    isPlaying = true
+                                    Toast.makeText(
+                                        context,
+                                        if (language == Language.SW) "Video hii inacheza moja kwa moja ndani ya APK!" else "Cette vidéo est lue directement dans l'APK !",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        if (language == Language.SW) "Faili hili liko ndani ya APK." else "Ce fichier est stocké dans l'APK.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MovieSurfaceVariant),
                             border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
@@ -415,14 +536,20 @@ fun VideoPlayerScreen(
                                 .testTag("btn_open_google_drive")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CloudQueue,
+                                imageVector = if (isWebLink) Icons.Default.CloudQueue else Icons.Default.PhoneAndroid,
                                 contentDescription = null,
-                                tint = MovieBlueVip,
+                                tint = if (isWebLink) MovieBlueVip else MovieGreenSuccess,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = Strings.openDrive(language),
+                                text = if (isWebLink) {
+                                    Strings.openDrive(language)
+                                } else if (language == Language.SW) {
+                                    "Video Ndani ya APK"
+                                } else {
+                                    "Vidéo dans l'APK"
+                                },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MovieTextPrimary
@@ -623,15 +750,22 @@ fun VideoPlayerScreen(
 
                                         IconButton(
                                             onClick = {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(ep.driveLink))
-                                                context.startActivity(intent)
+                                                if (ep.driveLink.startsWith("http://") || ep.driveLink.startsWith("https://")) {
+                                                    runCatching {
+                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(ep.driveLink))
+                                                        context.startActivity(intent)
+                                                    }
+                                                } else {
+                                                    selectedEpisode = ep.episodeNumber
+                                                    isPlaying = true
+                                                }
                                             },
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.CloudQueue,
-                                                contentDescription = "Open episode in Drive",
-                                                tint = MovieBlueVip,
+                                                imageVector = if (ep.driveLink.startsWith("http")) Icons.Default.CloudQueue else Icons.Default.PlayArrow,
+                                                contentDescription = "Open episode",
+                                                tint = if (ep.driveLink.startsWith("http")) MovieBlueVip else MovieGreenSuccess,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }

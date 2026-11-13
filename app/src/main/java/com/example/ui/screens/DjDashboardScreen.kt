@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +34,8 @@ import com.example.R
 import com.example.model.*
 import com.example.ui.theme.*
 import com.example.model.AdminUploadState
+import com.example.util.LocalVideoFileHelper
+import com.example.util.PickedMediaInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,6 +47,7 @@ fun DjDashboardScreen(
     onLanguageToggle: () -> Unit,
     onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int) -> Unit,
     onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int) -> Unit,
+    onImportPickedVideo: (Uri, String, Float, Uri?, String, MovieCategory, String, String, String, String?, Boolean, Boolean, Int, Boolean) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
     onDeleteMovie: (String) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -237,7 +244,8 @@ fun DjDashboardScreen(
                         djName = djName,
                         uploadState = uploadState,
                         onAddMovie = onAddMovie,
-                        onStartUploadMovie = onStartUploadMovie
+                        onStartUploadMovie = onStartUploadMovie,
+                        onImportPickedVideo = onImportPickedVideo
                     )
                     1 -> DjMyMoviesTab(
                         language = language,
@@ -256,8 +264,10 @@ private fun DjPublishTab(
     djName: String,
     uploadState: AdminUploadState,
     onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int) -> Unit,
-    onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int) -> Unit
+    onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int) -> Unit,
+    onImportPickedVideo: (Uri, String, Float, Uri?, String, MovieCategory, String, String, String, String?, Boolean, Boolean, Int, Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var selectedCat by remember { mutableStateOf(MovieCategory.ACTION) }
     var ageRating by remember { mutableStateOf("10+") }
@@ -268,6 +278,20 @@ private fun DjPublishTab(
     var isSeries by remember { mutableStateOf(false) }
     var episodesCount by remember { mutableStateOf(1) }
     var selectedLocalFileName by remember { mutableStateOf("") }
+    var pickedMedia by remember { mutableStateOf<PickedMediaInfo?>(null) }
+
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val info = LocalVideoFileHelper.queryPickedFile(context, uri)
+            pickedMedia = info
+            selectedLocalFileName = info.displayName
+            if (title.isBlank()) {
+                title = info.displayName.substringBeforeLast(".").replace("_", " ")
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -487,24 +511,23 @@ private fun DjPublishTab(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (language == Language.SW) "Faili Lililochaguliwa:" else "Fichier Sélectionné :",
                                 fontSize = 11.sp,
                                 color = MovieTextSecondary
                             )
                             Text(
-                                text = selectedLocalFileName.ifBlank { "video_${title.ifBlank { "movie" }.lowercase().replace(" ", "_")}.mp4" },
-                                fontSize = 13.sp,
+                                text = pickedMedia?.let { "${it.displayName} (${"%.1f".format(it.sizeMb)} MB)" }
+                                    ?: selectedLocalFileName.ifBlank { "video_${title.ifBlank { "movie" }.lowercase().replace(" ", "_")}.mp4" },
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MovieTextPrimary
+                                color = if (pickedMedia != null) MovieGreenSuccess else MovieTextPrimary
                             )
                         }
 
                         Button(
-                            onClick = {
-                                selectedLocalFileName = "${title.ifBlank { "filamu" }.lowercase().replace(" ", "_")}_dj.mp4"
-                            },
+                            onClick = { videoPickerLauncher.launch(arrayOf("video/*")) },
                             colors = ButtonDefaults.buttonColors(containerColor = MovieGoldLight),
                             shape = RoundedCornerShape(8.dp)
                         ) {
@@ -617,18 +640,42 @@ private fun DjPublishTab(
                     descSw = ""
                     videoUrl = ""
                 } else {
-                    onStartUploadMovie(
-                        title,
-                        selectedCat,
-                        ageRating,
-                        descSw,
-                        descFr.ifBlank { descSw },
-                        djName,
-                        selectedLocalFileName.ifBlank { "${title.lowercase().replace(" ", "_")}.mp4" },
-                        false,
-                        isSeries,
-                        episodesCount
-                    )
+                    val picked = pickedMedia
+                    if (picked != null) {
+                        onImportPickedVideo(
+                            picked.uri,
+                            picked.displayName,
+                            picked.sizeMb,
+                            null,
+                            title,
+                            selectedCat,
+                            ageRating,
+                            descSw,
+                            descFr.ifBlank { descSw },
+                            djName,
+                            false,
+                            isSeries,
+                            episodesCount,
+                            true
+                        )
+                        title = ""
+                        descSw = ""
+                        pickedMedia = null
+                        selectedLocalFileName = ""
+                    } else {
+                        onStartUploadMovie(
+                            title,
+                            selectedCat,
+                            ageRating,
+                            descSw,
+                            descFr.ifBlank { descSw },
+                            djName,
+                            selectedLocalFileName.ifBlank { "${title.lowercase().replace(" ", "_")}.mp4" },
+                            false,
+                            isSeries,
+                            episodesCount
+                        )
+                    }
                 }
             },
             modifier = Modifier
@@ -639,10 +686,20 @@ private fun DjPublishTab(
             shape = RoundedCornerShape(12.dp),
             enabled = !uploadState.isUploading && title.isNotBlank()
         ) {
-            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color.Black)
+            if (uploadState.isUploading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                    color = Color.Black
+                )
+            } else {
+                Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color.Black)
+            }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (language == Language.SW) "Chapisha Filamu ya $djName" else "Publier le Film de $djName",
+                text = if (uploadState.isUploading)
+                    (if (language == Language.SW) "Inapakia... (${uploadState.percentage}%)" else "Téléversement... (${uploadState.percentage}%)")
+                else if (language == Language.SW) "Chapisha Filamu ya $djName" else "Publier le Film de $djName",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -123,9 +124,17 @@ fun SplashScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.5.dp,
+                color = MovieRedPrimary
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             // Hint
             Text(
-                text = if (language == Language.SW) "Gusa popote kuendelea" else "Touchez pour continuer",
+                text = if (language == Language.SW) "Inapakia... Gusa popote kuendelea" else "Chargement... Touchez pour continuer",
                 fontSize = 11.sp,
                 color = MovieTextSecondary.copy(alpha = 0.7f),
                 modifier = Modifier.alpha(subtitleAlpha.value)

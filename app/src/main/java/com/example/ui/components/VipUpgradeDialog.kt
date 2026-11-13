@@ -41,6 +41,15 @@ fun VipUpgradeDialog(
             if (currentUser?.isVipActive() == true) currentUser.vipTier else VipTier.VIP_PRO
         )
     }
+    var isProcessing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isProcessing) {
+        if (isProcessing) {
+            kotlinx.coroutines.delay(350)
+            isProcessing = false
+            onSelectPlan(selectedTier)
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -170,7 +179,8 @@ fun VipUpgradeDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    onClick = { onSelectPlan(selectedTier) },
+                    onClick = { if (!isProcessing) isProcessing = true },
+                    enabled = !isProcessing,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
@@ -180,15 +190,30 @@ fun VipUpgradeDialog(
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = if (currentUser?.vipTier == selectedTier)
-                            (if (language == Language.SW) "Mpango Wako wa Sasa" else "Votre Forfait Actuel")
-                        else
-                            (if (language == Language.SW) "Washa ${selectedTier.titleSw} ($3.99)" else "Activer ${selectedTier.titleFr} (3.99 $)"),
-                        color = if (selectedTier == VipTier.VIP_PRO) Color.Black else Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
+                    if (isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = if (selectedTier == VipTier.VIP_PRO) Color.Black else Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (language == Language.SW) "Inapakia..." else "Activation...",
+                            color = if (selectedTier == VipTier.VIP_PRO) Color.Black else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    } else {
+                        Text(
+                            text = if (currentUser?.vipTier == selectedTier)
+                                (if (language == Language.SW) "Mpango Wako wa Sasa" else "Votre Forfait Actuel")
+                            else
+                                (if (language == Language.SW) "Washa ${selectedTier.titleSw} ($3.99)" else "Activer ${selectedTier.titleFr} (3.99 $)"),
+                            color = if (selectedTier == VipTier.VIP_PRO) Color.Black else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
                 }
             }
         }

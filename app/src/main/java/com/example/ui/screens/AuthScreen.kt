@@ -42,6 +42,7 @@ fun AuthScreen(
     sentOtpCode: String?,
     otpTargetEmail: String?,
     sentVerifyEmailOtp: String? = null,
+    isLoading: Boolean = false,
     onSwitchMode: (AuthMode) -> Unit,
     onBack: () -> Unit,
     onLogin: (String, String) -> Unit,
@@ -58,9 +59,7 @@ fun AuthScreen(
     var emailInput by remember { mutableStateOf("") }
     var isEmailCodeVerified by remember { mutableStateOf(false) }
     var emailVerifyCodeInput by remember { mutableStateOf("") }
-    var identifier by remember(authMode) {
-        mutableStateOf(if (authMode == AuthMode.ADMIN_LOGIN) "yesukishilo08@gmail.com" else "")
-    }
+    var identifier by remember(authMode) { mutableStateOf("") }
     var password by remember(authMode) { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var selectedAgeTier by remember { mutableStateOf(AgeTier.AGE_18_PLUS) }
@@ -147,9 +146,9 @@ fun AuthScreen(
                             else
                                 "Entrez votre Gmail pour recevoir le code de vérification à 6 chiffres."
                             isAdmin -> if (language == Language.SW)
-                                "Akaunti rasmi ya usimamizi wa Movie SW (yesukishilo08@gmail.com)."
+                                "Ingiza Gmail yako ya siri ya Admin na Code yako ya usalama kuingia."
                             else
-                                "Compte officiel administrateur Movie SW (yesukishilo08@gmail.com)."
+                                "Entrez votre Gmail administrateur et votre code d'accès personnel."
                             isRegister -> if (language == Language.SW)
                                 "Unda akaunti uanze kutazama filamu mara moja."
                             else
@@ -205,17 +204,28 @@ fun AuthScreen(
                         // Button: Send Code to Gmail
                         Button(
                             onClick = { onSendOtp(resetEmail) },
+                            enabled = !isLoading,
                             modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_send_otp_gmail"),
                             colors = ButtonDefaults.buttonColors(containerColor = MovieBlueVip),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Send, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (language == Language.SW) "Tuma Code kwa Gmail" else "Envoyer le Code par Gmail",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            if (isLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (language == Language.SW) "Inatuma..." else "Envoi...",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            } else {
+                                Icon(Icons.Default.Send, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (language == Language.SW) "Tuma Code kwa Gmail" else "Envoyer le Code par Gmail",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
                         }
 
                         // Display sent OTP hint banner if generated
@@ -298,16 +308,28 @@ fun AuthScreen(
                                 onClick = {
                                     onResetPassword(resetEmail, resetOtpInput, newPasswordInput)
                                 },
+                                enabled = !isLoading,
                                 modifier = Modifier.fillMaxWidth().height(50.dp).testTag("btn_confirm_reset_password"),
                                 colors = ButtonDefaults.buttonColors(containerColor = MovieGreenSuccess),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text(
-                                    text = if (language == Language.SW) "Thibitisha na Weka Nywila Mpya" else "Confirmer & Réinitialiser",
-                                    color = Color.Black,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
+                                if (isLoading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.Black)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (language == Language.SW) "Inapakia..." else "Chargement...",
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                } else {
+                                    Text(
+                                        text = if (language == Language.SW) "Thibitisha na Weka Nywila Mpya" else "Confirmer & Réinitialiser",
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                }
                             }
                         }
 
@@ -653,7 +675,13 @@ fun AuthScreen(
                             OutlinedTextField(
                                 value = identifier,
                                 onValueChange = { identifier = it },
-                                label = { Text(if (isAdmin) "Admin Gmail" else Strings.labelEmailOrPhone(language)) },
+                                label = { Text(if (isAdmin) (if (language == Language.SW) "Gmail ya Admin" else "Gmail Admin") else Strings.labelEmailOrPhone(language)) },
+                                placeholder = {
+                                    Text(
+                                        text = if (isAdmin) "admin@gmail.com" else if (language == Language.SW) "mfano: +243... au jina@gmail.com" else "ex. +243... ou nom@gmail.com",
+                                        fontSize = 12.sp
+                                    )
+                                },
                                 leadingIcon = {
                                     Icon(
                                         if (isAdmin) Icons.Default.AdminPanelSettings else Icons.Default.Email,
@@ -746,7 +774,7 @@ fun AuthScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Submit Button
+                        // Submit Button with Loading State
                         Button(
                             onClick = {
                                 if (isRegister) {
@@ -768,22 +796,38 @@ fun AuthScreen(
                                     onLogin(identifier, password)
                                 }
                             },
+                            enabled = !isLoading,
                             modifier = Modifier.fillMaxWidth().height(52.dp).testTag("auth_submit_button"),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isAdmin) MovieGold else MovieRedPrimary
                             ),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text(
-                                text = when {
-                                    isAdmin -> if (language == Language.SW) "Ingia kama Admin (Gérer APK)" else "Entrer Admin (Gérer APK)"
-                                    isRegister -> Strings.btnSignUp(language)
-                                    else -> Strings.btnSignIn(language)
-                                },
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isAdmin) Color.Black else Color.White
-                            )
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = if (isAdmin) Color.Black else Color.White
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = if (language == Language.SW) "Inapakia..." else "Chargement...",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isAdmin) Color.Black else Color.White
+                                )
+                            } else {
+                                Text(
+                                    text = when {
+                                        isAdmin -> if (language == Language.SW) "Ingia kama Admin (Gérer APK)" else "Entrer Admin (Gérer APK)"
+                                        isRegister -> Strings.btnSignUp(language)
+                                        else -> Strings.btnSignIn(language)
+                                    },
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isAdmin) Color.Black else Color.White
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(18.dp))
@@ -817,57 +861,46 @@ fun AuthScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        if (!isAdmin && !isRegister) {
+                            Spacer(modifier = Modifier.height(20.dp))
 
-                        HorizontalDivider(color = MovieDivider)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = if (language == Language.SW) "Ufikiaji wa Haraka (Demo):" else "Accès Rapide (Démo) :",
-                            fontSize = 11.sp,
-                            color = MovieTextSecondary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    onSwitchMode(AuthMode.SIGN_IN)
-                                    identifier = "viewer@moviesw.com"
-                                    password = "viewer1234"
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                            HorizontalDivider(color = MovieDivider)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (language == Language.SW) "Ufikiaji wa Haraka (Mtazamaji / DJ):" else "Accès Rapide (Spectateur / DJ) :",
+                                fontSize = 11.sp,
+                                color = MovieTextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Viewer", fontSize = 11.sp, color = MovieTextPrimary)
-                            }
+                                OutlinedButton(
+                                    onClick = {
+                                        onSwitchMode(AuthMode.SIGN_IN)
+                                        identifier = "viewer@moviesw.com"
+                                        password = "viewer1234"
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Viewer Demo", fontSize = 11.sp, color = MovieTextPrimary)
+                                }
 
-                            OutlinedButton(
-                                onClick = {
-                                    onSwitchMode(AuthMode.SIGN_IN)
-                                    identifier = "djafro@moviesw.com"
-                                    password = "viewer1234"
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
-                            ) {
-                                Text("DJ Demo", fontSize = 11.sp, color = MovieBlueVip)
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    onSwitchMode(AuthMode.ADMIN_LOGIN)
-                                    identifier = "yesukishilo08@gmail.com"
-                                    password = "boBO200@"
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
-                            ) {
-                                Text("Admin Yesu", fontSize = 11.sp, color = MovieGoldLight)
+                                OutlinedButton(
+                                    onClick = {
+                                        onSwitchMode(AuthMode.SIGN_IN)
+                                        identifier = "djafro@moviesw.com"
+                                        password = "viewer1234"
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                                ) {
+                                    Text("DJ Demo", fontSize = 11.sp, color = MovieBlueVip)
+                                }
                             }
                         }
                     }

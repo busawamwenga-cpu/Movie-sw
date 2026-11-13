@@ -31,6 +31,7 @@ fun ExploreScreen(
     selectedCategory: MovieCategory,
     selectedDj: String?,
     searchQuery: String,
+    isLoading: Boolean = false,
     onSearchChange: (String) -> Unit,
     onSelectCategory: (MovieCategory) -> Unit,
     onSelectDj: (String?) -> Unit,
@@ -42,14 +43,36 @@ fun ExploreScreen(
             .background(MovieDarkBg),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 90.dp)
     ) {
+        if (isLoading) {
+            item {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(3.dp).padding(bottom = 8.dp),
+                    color = MovieGold,
+                    trackColor = MovieSurfaceVariant
+                )
+            }
+        }
         // Search Input
         item {
-            Text(
-                text = Strings.navExplore(language),
-                fontWeight = FontWeight.Black,
-                fontSize = 24.sp,
-                color = MovieTextPrimary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(
+                    text = Strings.navExplore(language),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 24.sp,
+                    color = MovieTextPrimary
+                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MovieGold
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(14.dp))
 
             OutlinedTextField(

@@ -270,4 +270,25 @@ class ExampleUnitTest {
         val dlRoundTrip = dl.toEntity("u_roundtrip").toDomain()
         assertEquals(dl, dlRoundTrip)
     }
+
+    @Test
+    fun testUpdateJsonParsingAndVersionComparison() {
+        val validJson = """
+            {
+              "versionCode": 3,
+              "versionName": "1.2",
+              "apkUrl": "https://github.com/busawamwenga-cpu/Movie-sw/releases/download/v1.2/app-release.apk"
+            }
+        """.trimIndent()
+        val info = com.example.util.AppUpdateManager.parseUpdateJson(validJson)
+        assertEquals(3, info.versionCode)
+        assertEquals("1.2", info.versionName)
+        assertTrue(com.example.util.AppUpdateManager.isUpdateAvailable(info.versionCode, 1))
+        assertFalse(com.example.util.AppUpdateManager.isUpdateAvailable(1, 1))
+        assertFalse(com.example.util.AppUpdateManager.isUpdateAvailable(1, 2))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            com.example.util.AppUpdateManager.parseUpdateJson("""{"versionCode": 2}""")
+        }
+    }
 }

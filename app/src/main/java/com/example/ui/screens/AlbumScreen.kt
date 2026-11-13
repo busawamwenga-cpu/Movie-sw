@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.*
+import com.example.ui.components.MoviePosterImage
 import com.example.ui.theme.*
 import com.example.util.Strings
 
@@ -33,6 +34,7 @@ fun AlbumScreen(
     currentUser: UserAccount?,
     allMovies: List<MovieItem>,
     activeDownloads: Map<String, DownloadTask> = emptyMap(),
+    isLoading: Boolean = false,
     onMovieClick: (MovieItem) -> Unit,
     onRemoveFavorite: (MovieItem) -> Unit,
     onVipUpgradeClick: () -> Unit
@@ -55,14 +57,37 @@ fun AlbumScreen(
             .background(MovieDarkBg),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 90.dp)
     ) {
+        if (isLoading) {
+            item {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = MovieGold,
+                    trackColor = MovieSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
         // Header
         item {
-            Text(
-                text = Strings.navAlbum(language),
-                fontWeight = FontWeight.Black,
-                fontSize = 24.sp,
-                color = MovieTextPrimary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = Strings.navAlbum(language),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 24.sp,
+                    color = MovieTextPrimary
+                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MovieGold
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(14.dp))
         }
 
@@ -361,9 +386,8 @@ fun AlbumScreen(
                                 .size(width = 80.dp, height = 75.dp)
                                 .clip(RoundedCornerShape(8.dp))
                         ) {
-                            Image(
-                                painter = painterResource(id = movie.posterRes ?: R.drawable.img_onboarding_1),
-                                contentDescription = movie.title,
+                            MoviePosterImage(
+                                movie = movie,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )

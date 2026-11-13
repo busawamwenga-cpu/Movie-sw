@@ -717,7 +717,8 @@ object MovieRepository {
         isDriveLink: Boolean,
         isVipOnly: Boolean,
         isSeries: Boolean,
-        episodesList: List<Episode>
+        episodesList: List<Episode>,
+        posterUrl: String = ""
     ): MovieItem {
         val movie = MovieItem(
             id = "mov_" + System.currentTimeMillis(),
@@ -727,6 +728,7 @@ object MovieRepository {
             descriptionSw = descSw,
             descriptionFr = descFr,
             posterRes = if (category == MovieCategory.ACTION) R.drawable.img_onboarding_1 else if (category == MovieCategory.KOREAN_DRAMA || category == MovieCategory.CHINESE_DRAMA) R.drawable.img_onboarding_2 else R.drawable.img_onboarding_3,
+            posterUrl = posterUrl,
             djName = djName.takeIf { !it.isNullOrBlank() },
             videoUrl = videoUrl,
             isDriveLink = isDriveLink,

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.*
+import com.example.ui.components.MoviePosterImage
 import com.example.ui.theme.*
 import com.example.util.Strings
 
@@ -39,6 +40,8 @@ fun HomeScreen(
     availableDjs: List<String>,
     selectedCategory: MovieCategory,
     selectedDj: String?,
+    isLoading: Boolean = false,
+    onRefresh: () -> Unit = {},
     onSelectCategory: (MovieCategory) -> Unit,
     onSelectDj: (String?) -> Unit,
     onMovieClick: (MovieItem) -> Unit,
@@ -47,28 +50,41 @@ fun HomeScreen(
 ) {
     val featuredMovie = remember(movies) { movies.firstOrNull() }
 
-    LazyColumn(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MovieDarkBg),
-        contentPadding = PaddingValues(bottom = 90.dp)
+            .background(MovieDarkBg)
     ) {
-        // 1. Featured Hero Banner
-        if (featuredMovie != null) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(340.dp)
-                        .clickable { onMovieClick(featuredMovie) }
-                ) {
-                    // Banner Image
-                    Image(
-                        painter = painterResource(id = featuredMovie.posterRes ?: R.drawable.img_onboarding_1),
-                        contentDescription = featuredMovie.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MovieDarkBg),
+            contentPadding = PaddingValues(bottom = 90.dp)
+        ) {
+            if (isLoading) {
+                item {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().height(3.dp),
+                        color = MovieGold,
+                        trackColor = MovieSurfaceVariant
                     )
+                }
+            }
+            // 1. Featured Hero Banner
+            if (featuredMovie != null) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(340.dp)
+                            .clickable { onMovieClick(featuredMovie) }
+                    ) {
+                        // Banner Image
+                        MoviePosterImage(
+                            movie = featuredMovie,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
 
                     // Cinematic Gradient Overlay
                     Box(
@@ -357,13 +373,39 @@ fun HomeScreen(
         // 5. Movies Grid / List Section
         item {
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = if (language == Language.SW) "Filamu Zinazopatikana" else "Films Disponibles",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = MovieTextPrimary,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (language == Language.SW) "Filamu Zinazopatikana" else "Films Disponibles",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MovieTextPrimary
+                )
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MovieGold
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            tint = MovieGoldLight,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(10.dp))
         }
 
@@ -391,6 +433,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
     }
 }
 
@@ -461,9 +504,8 @@ fun MovieCard(
                     .fillMaxWidth()
                     .height(180.dp)
             ) {
-                Image(
-                    painter = painterResource(id = movie.posterRes ?: R.drawable.img_onboarding_1),
-                    contentDescription = movie.title,
+                MoviePosterImage(
+                    movie = movie,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )

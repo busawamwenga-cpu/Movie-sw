@@ -1,7 +1,12 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,14 +27,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.MovieRepository
 import com.example.model.*
 import com.example.ui.theme.*
+import com.example.util.AppNotificationHelper
+import com.example.util.LocalVideoFileHelper
+import com.example.util.PickedMediaInfo
 import com.example.util.Strings
 
 @Composable
@@ -39,8 +49,10 @@ fun AdminDashboardScreen(
     movies: List<MovieItem>,
     socialLinks: List<SocialLink>,
     adminUploadState: AdminUploadState,
-    onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int) -> Unit,
-    onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int) -> Unit,
+    isActionLoading: Boolean = false,
+    onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int, Boolean) -> Unit,
+    onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int, Boolean) -> Unit,
+    onImportPickedVideo: (Uri, String, Float, Uri?, String, MovieCategory, String, String, String, String?, Boolean, Boolean, Int, Boolean) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
     onDeleteMovie: (String) -> Unit,
     onChangeUserVip: (String, VipTier) -> Unit,
     onDeleteUser: (String) -> Unit,
@@ -52,7 +64,7 @@ fun AdminDashboardScreen(
     onLanguageToggle: () -> Unit,
     onExitAdmin: () -> Unit
 ) {
-    var adminTab by remember { mutableIntStateOf(0) } // 0: Publish, 1: Manage Movies, 2: Customers, 3: Ma-DJ & Access, 4: Analytics, 5: Social & Notifs
+    var adminTab by remember { mutableIntStateOf(0) } // 0: Publish, 1: Arifa & Mitandao, 2: Manage Movies, 3: Customers, 4: Ma-DJ & Access, 5: Analytics
 
     Box(
         modifier = Modifier
@@ -176,7 +188,7 @@ fun AdminDashboardScreen(
                     onClick = { adminTab = 1 },
                     text = {
                         Text(
-                            text = "${Strings.tabManageMovies(language)} (${movies.size})",
+                            text = if (language == Language.SW) "Tuma Arifa" else "Notifications",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 1) MovieGold else MovieTextSecondary
@@ -188,32 +200,32 @@ fun AdminDashboardScreen(
                     onClick = { adminTab = 2 },
                     text = {
                         Text(
-                            text = "${Strings.tabCustomers(language)} (${users.size})",
+                            text = "${Strings.tabManageMovies(language)} (${movies.size})",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 2) MovieGold else MovieTextSecondary
                         )
                     }
                 )
-                val djCount = remember(users) { users.count { it.role == UserRole.DJ } }
                 Tab(
                     selected = adminTab == 3,
                     onClick = { adminTab = 3 },
                     text = {
                         Text(
-                            text = if (language == Language.SW) "Ma-DJ & Access ($djCount)" else "DJs & Accès ($djCount)",
+                            text = "${Strings.tabCustomers(language)} (${users.size})",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 3) MovieGold else MovieTextSecondary
                         )
                     }
                 )
+                val djCount = remember(users) { users.count { it.role == UserRole.DJ } }
                 Tab(
                     selected = adminTab == 4,
                     onClick = { adminTab = 4 },
                     text = {
                         Text(
-                            text = Strings.tabStats(language),
+                            text = if (language == Language.SW) "Ma-DJ & Access ($djCount)" else "DJs & Accès ($djCount)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 4) MovieGold else MovieTextSecondary
@@ -225,7 +237,7 @@ fun AdminDashboardScreen(
                     onClick = { adminTab = 5 },
                     text = {
                         Text(
-                            text = Strings.tabSocialAdmin(language),
+                            text = Strings.tabStats(language),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (adminTab == 5) MovieGold else MovieTextSecondary
@@ -242,26 +254,28 @@ fun AdminDashboardScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 when (adminTab) {
-                    0 -> AdminPublishTab(language, adminUploadState, onAddMovie, onStartUploadMovie)
-                    1 -> AdminManageMoviesTab(language, movies, onDeleteMovie)
-                    2 -> AdminCustomersTab(language, users, onChangeUserVip, onCancelUserVip, onRenewUserVip, onDeleteUser)
-                    3 -> AdminDjAccountsTab(language, users, onCreateDjAccount, onToggleDjAccess, onDeleteUser)
-                    4 -> AdminAnalyticsTab(language, movies)
-                    5 -> AdminSocialAndNotifsTab(language, socialLinks, onBroadcastNotif)
+                    0 -> AdminPublishTab(language, adminUploadState, onAddMovie, onStartUploadMovie, onImportPickedVideo)
+                    1 -> AdminSocialAndNotifsTab(language, socialLinks, isActionLoading, onBroadcastNotif)
+                    2 -> AdminManageMoviesTab(language, movies, onDeleteMovie)
+                    3 -> AdminCustomersTab(language, users, onChangeUserVip, onCancelUserVip, onRenewUserVip, onDeleteUser)
+                    4 -> AdminDjAccountsTab(language, users, onCreateDjAccount, onToggleDjAccess, onDeleteUser)
+                    5 -> AdminAnalyticsTab(language, movies)
                 }
             }
         }
     }
 }
 
-// 1. Kuchapisha Filamu na Mfululizo (Kwa Faili la Simu & Progress ya %)
+// 1. Kuchapisha Filamu na Mfululizo (Kwa Faili Halisi la Simu Android -> APK & Arifa)
 @Composable
 private fun AdminPublishTab(
     language: Language,
     uploadState: AdminUploadState,
-    onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int) -> Unit,
-    onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int) -> Unit
+    onAddMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Boolean, Int, Boolean) -> Unit,
+    onStartUploadMovie: (String, MovieCategory, String, String, String, String?, String, Boolean, Boolean, Int, Boolean) -> Unit,
+    onImportPickedVideo: (Uri, String, Float, Uri?, String, MovieCategory, String, String, String, String?, Boolean, Boolean, Int, Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var selectedCat by remember { mutableStateOf(MovieCategory.ACTION) }
     var ageRating by remember { mutableStateOf("10+") }
@@ -269,11 +283,39 @@ private fun AdminPublishTab(
     var descSw by remember { mutableStateOf("") }
     var descFr by remember { mutableStateOf("") }
     var uploadMode by remember { mutableIntStateOf(0) } // 0: Faili la Simu (Phone File to APK), 1: Google Drive link
-    var localFileName by remember { mutableStateOf("Kisasi_Cha_Shaolin_HD.mp4") }
-    var videoUrl by remember { mutableStateOf("https://drive.google.com/file/d/sample/view") }
+    var pickedMedia by remember { mutableStateOf<PickedMediaInfo?>(null) }
+    var pickedPosterUri by remember { mutableStateOf<Uri?>(null) }
+    var localFileName by remember { mutableStateOf("") }
+    var videoUrl by remember { mutableStateOf("") }
     var isVipOnly by remember { mutableStateOf(true) }
     var isSeries by remember { mutableStateOf(false) }
     var episodesCount by remember { mutableIntStateOf(3) }
+    var sendNotification by remember { mutableStateOf(true) }
+
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val info = LocalVideoFileHelper.queryPickedFile(context, uri)
+            pickedMedia = info
+            localFileName = info.displayName
+            if (title.isBlank()) {
+                title = info.displayName.substringBeforeLast(".").replace("_", " ")
+            }
+        }
+    }
+
+    val posterPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            pickedPosterUri = uri
+        }
+    }
+
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
 
     Column(
         modifier = Modifier
@@ -456,7 +498,7 @@ private fun AdminPublishTab(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // File selection from phone storage (if uploadMode == 0)
+        // File selection from Android phone storage (if uploadMode == 0)
         if (uploadMode == 0) {
             Surface(
                 color = MovieCardBg,
@@ -464,54 +506,109 @@ private fun AdminPublishTab(
                 border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = if (language == Language.SW) "Faili la Video la Simu (Chagua au Andika Jina):" else "Fichier Vidéo Local :",
-                        fontSize = 12.sp,
+                        text = if (language == Language.SW) "Chagua Video Kutoka Kwenye Simu Yako (Android):" else "Sélectionner une Vidéo Android :",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = MovieTextPrimary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = localFileName,
-                        onValueChange = { localFileName = it },
-                        label = { Text("Jina la faili (.mp4, .mkv, .avi)") },
-                        leadingIcon = {
-                            Icon(Icons.Default.VideoFile, contentDescription = null, tint = MovieGoldLight)
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                    Button(
+                        onClick = { videoPickerLauncher.launch(arrayOf("video/*")) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MovieBlueVip),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("admin_btn_pick_video")
+                    ) {
+                        Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (language == Language.SW) "Fungua Faili za Simu (Chagua Video)" else "Choisir une Vidéo sur le Téléphone",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    if (pickedMedia != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            color = MovieGreenSuccess.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MovieGreenSuccess),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MovieGreenSuccess, modifier = Modifier.size(18.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = pickedMedia!!.displayName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MovieTextPrimary
+                                    )
+                                    Text(
+                                        text = "${"%.1f".format(pickedMedia!!.sizeMb)} MB • Iko tayari kupakiwa kwenye APK",
+                                        fontSize = 10.sp,
+                                        color = MovieGreenSuccess
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = localFileName,
+                            onValueChange = { localFileName = it },
+                            label = { Text(if (language == Language.SW) "Au andika jina la faili (.mp4, .mkv)" else "Ou nom du fichier (.mp4, .mkv)") },
+                            leadingIcon = {
+                                Icon(Icons.Default.VideoFile, contentDescription = null, tint = MovieGoldLight)
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
 
-                    Text(
-                        text = if (language == Language.SW) "Mifano ya faili za haraka kwenye hifadhi ya simu:" else "Fichiers rapides :",
-                        fontSize = 10.sp,
-                        color = MovieTextSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        listOf("Kisasi_KungFu_1080p.mp4", "Komando_Giza.mkv", "Upendo_Seoul_Ep1.mp4").forEach { preset ->
-                            Surface(
-                                color = MovieSurfaceVariant,
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.clickable { localFileName = preset }
-                            ) {
-                                Text(
-                                    text = preset.take(14) + "...",
-                                    fontSize = 10.sp,
-                                    color = MovieGoldLight,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        OutlinedButton(
+                            onClick = {
+                                posterPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
-                            }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Image, contentDescription = null, tint = MovieGoldLight, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (pickedPosterUri != null)
+                                    (if (language == Language.SW) "Jalada Limechaguliwa" else "Affiche Choisie")
+                                else
+                                    (if (language == Language.SW) "Picha ya Jalada (Hiari)" else "Affiche (Optionnel)"),
+                                fontSize = 11.sp,
+                                color = MovieGoldLight
+                            )
+                        }
+                        if (pickedPosterUri != null) {
+                            AsyncImage(
+                                model = pickedPosterUri,
+                                contentDescription = "Selected Poster",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
+                            )
                         }
                     }
                 }
@@ -522,6 +619,7 @@ private fun AdminPublishTab(
                 value = videoUrl,
                 onValueChange = { videoUrl = it },
                 label = { Text(if (language == Language.SW) "Kiungo cha Video / Google Drive" else "Lien de la Vidéo / Google Drive") },
+                placeholder = { Text("https://drive.google.com/file/d/...") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("admin_input_url"),
                 shape = RoundedCornerShape(10.dp)
@@ -679,25 +777,85 @@ private fun AdminPublishTab(
             )
         }
 
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Switch: Auto-send Notification to all viewers
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MovieCardBg)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (language == Language.SW) "Tuma Arifa (Notification) kwa Wote" else "Notifier Tous les Utilisateurs",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MovieGoldLight
+                )
+                Text(
+                    text = if (language == Language.SW) "Wateja watapata arifa mara filamu ikipakiwa" else "Envoie une alerte dès la publication",
+                    fontSize = 11.sp,
+                    color = MovieTextSecondary
+                )
+            }
+            Switch(
+                checked = sendNotification,
+                onCheckedChange = { sendNotification = it },
+                colors = SwitchDefaults.colors(checkedThumbColor = MovieGreenSuccess)
+            )
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Submit Button (Upload file with % progress or direct publish)
+        // Submit Button (Upload real Android file with % progress or Drive publish)
         Button(
             onClick = {
+                if (sendNotification && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !AppNotificationHelper.hasNotificationPermission(context)
+                ) {
+                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
                 if (title.isNotBlank()) {
+                    val swDesc = descSw.ifBlank { "Filamu iliyopakiwa kutoka kwenye simu na kutafsiriwa na $djName" }
+                    val frDesc = descFr.ifBlank { "Film téléversé depuis le fichier local et traduit par $djName" }
                     if (uploadMode == 0) {
-                        onStartUploadMovie(
-                            title,
-                            selectedCat,
-                            ageRating,
-                            descSw.ifBlank { "Filamu iliyopakiwa kutoka kwenye simu na kutafsiriwa na $djName" },
-                            descFr.ifBlank { "Film téléversé depuis le fichier local et traduit par $djName" },
-                            djName,
-                            localFileName,
-                            isVipOnly,
-                            isSeries,
-                            episodesCount
-                        )
+                        val picked = pickedMedia
+                        if (picked != null) {
+                            onImportPickedVideo(
+                                picked.uri,
+                                picked.displayName,
+                                picked.sizeMb,
+                                pickedPosterUri,
+                                title,
+                                selectedCat,
+                                ageRating,
+                                swDesc,
+                                frDesc,
+                                djName,
+                                isVipOnly,
+                                isSeries,
+                                episodesCount,
+                                sendNotification
+                            )
+                        } else {
+                            onStartUploadMovie(
+                                title,
+                                selectedCat,
+                                ageRating,
+                                swDesc,
+                                frDesc,
+                                djName,
+                                localFileName.ifBlank { "${title.replace(" ", "_")}.mp4" },
+                                isVipOnly,
+                                isSeries,
+                                episodesCount,
+                                sendNotification
+                            )
+                        }
                     } else {
                         onAddMovie(
                             title,
@@ -706,17 +864,21 @@ private fun AdminPublishTab(
                             descSw.ifBlank { "Filamu ya kiungo cha mtandao iliyotafsiriwa na $djName" },
                             descFr.ifBlank { "Film en ligne avec doublage par $djName" },
                             djName,
-                            videoUrl,
+                            videoUrl.ifBlank { "https://drive.google.com/file/d/sample/view" },
                             true,
                             isVipOnly,
                             isSeries,
-                            episodesCount
+                            episodesCount,
+                            sendNotification
                         )
                     }
                     title = ""
+                    pickedMedia = null
+                    pickedPosterUri = null
+                    localFileName = ""
                 }
             },
-            enabled = !uploadState.isUploading,
+            enabled = !uploadState.isUploading && title.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
@@ -724,7 +886,15 @@ private fun AdminPublishTab(
             colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color.Black)
+            if (uploadState.isUploading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                    color = Color.Black
+                )
+            } else {
+                Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color.Black)
+            }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (uploadState.isUploading)
@@ -1681,11 +1851,12 @@ private fun AdminAnalyticsTab(
     }
 }
 
-// 4. Mitandao & Arifa
+// 4. Arifa kwa Watazamaji & Mitandao ya Kijamii
 @Composable
 private fun AdminSocialAndNotifsTab(
     language: Language,
     socialLinks: List<SocialLink>,
+    isActionLoading: Boolean = false,
     onBroadcastNotif: (String, String, String, String) -> Unit
 ) {
     val context = LocalContext.current
@@ -1694,12 +1865,128 @@ private fun AdminSocialAndNotifsTab(
     var notifMsgSw by remember { mutableStateOf("") }
     var notifMsgFr by remember { mutableStateOf("") }
 
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(bottom = 24.dp)
     ) {
+        Text(
+            text = if (language == Language.SW) "Tuma Arifa Mpya kwa Watazamaji Wote" else "Diffuser une Nouvelle Notification",
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+            color = MovieGold
+        )
+        Text(
+            text = if (language == Language.SW)
+                "Arifa itaonekana ndani ya app na pia kama notification ya simu."
+            else
+                "La notification apparaîtra dans l'application et sur le téléphone.",
+            fontSize = 11.sp,
+            color = MovieTextSecondary
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = notifTitleSw,
+            onValueChange = { notifTitleSw = it },
+            label = { Text("Kichwa cha Arifa (Kiswahili)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("admin_notif_title_sw"),
+            shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = notifMsgSw,
+            onValueChange = { notifMsgSw = it },
+            label = { Text("Ujumbe wa Arifa (Kiswahili)") },
+            maxLines = 3,
+            modifier = Modifier.fillMaxWidth().testTag("admin_notif_msg_sw"),
+            shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = notifTitleFr,
+            onValueChange = { notifTitleFr = it },
+            label = { Text("Titre de la Notification (Français - Hiari)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = notifMsgFr,
+            onValueChange = { notifMsgFr = it },
+            label = { Text("Message de la Notification (Français - Hiari)") },
+            maxLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Button(
+            onClick = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !AppNotificationHelper.hasNotificationPermission(context)
+                ) {
+                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                if (notifTitleSw.isNotBlank() && notifMsgSw.isNotBlank()) {
+                    onBroadcastNotif(
+                        notifTitleSw,
+                        notifTitleFr.ifBlank { notifTitleSw },
+                        notifMsgSw,
+                        notifMsgFr.ifBlank { notifMsgSw }
+                    )
+                    notifTitleSw = ""
+                    notifTitleFr = ""
+                    notifMsgSw = ""
+                    notifMsgFr = ""
+                }
+            },
+            enabled = !isActionLoading && notifTitleSw.isNotBlank() && notifMsgSw.isNotBlank(),
+            colors = ButtonDefaults.buttonColors(containerColor = MovieRedPrimary),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth().height(50.dp).testTag("admin_btn_send_notif")
+        ) {
+            if (isActionLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (language == Language.SW) "Inatuma Arifa..." else "Envoi en cours...",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            } else {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (language == Language.SW) "Tuma Arifa kwa Wote" else "Envoyer la Notification",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(22.dp))
+        HorizontalDivider(color = MovieDivider)
+        Spacer(modifier = Modifier.height(16.dp))
+
         Text(
             text = if (language == Language.SW) "Mitandao ya Kijamii ya App" else "Réseaux Sociaux de l'App",
             fontWeight = FontWeight.Bold,
@@ -1738,90 +2025,6 @@ private fun AdminSocialAndNotifsTab(
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-        HorizontalDivider(color = MovieDivider)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = if (language == Language.SW) "Tuma Arifa Mpya kwa Watazamaji Wote" else "Diffuser une Nouvelle Notification",
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = MovieTextPrimary
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-
-        OutlinedTextField(
-            value = notifTitleSw,
-            onValueChange = { notifTitleSw = it },
-            label = { Text("Kichwa cha Arifa (Kiswahili)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = notifMsgSw,
-            onValueChange = { notifMsgSw = it },
-            label = { Text("Ujumbe wa Arifa (Kiswahili)") },
-            maxLines = 2,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = notifTitleFr,
-            onValueChange = { notifTitleFr = it },
-            label = { Text("Titre de la Notification (Français)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = notifMsgFr,
-            onValueChange = { notifMsgFr = it },
-            label = { Text("Message de la Notification (Français)") },
-            maxLines = 2,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Button(
-            onClick = {
-                if (notifTitleSw.isNotBlank() && notifMsgSw.isNotBlank()) {
-                    onBroadcastNotif(
-                        notifTitleSw,
-                        notifTitleFr.ifBlank { notifTitleSw },
-                        notifMsgSw,
-                        notifMsgFr.ifBlank { notifMsgSw }
-                    )
-                    notifTitleSw = ""
-                    notifTitleFr = ""
-                    notifMsgSw = ""
-                    notifMsgFr = ""
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = MovieRedPrimary),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth().height(48.dp)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = if (language == Language.SW) "Tuma Arifa kwa Wote" else "Envoyer la Notification",
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
         }
     }
 }

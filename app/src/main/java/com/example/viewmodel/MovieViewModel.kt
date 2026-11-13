@@ -1,9 +1,18 @@
 package com.example.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
 import com.example.data.MovieRepository
 import com.example.model.*
+import com.example.util.AppNotificationHelper
+import com.example.util.AppUpdateManager
+import com.example.util.AppUpdateUiState
+import com.example.util.LocalVideoFileHelper
+import com.example.util.RemoteUpdateInfo
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -88,6 +97,20 @@ class MovieViewModel : ViewModel() {
     // Admin Upload Progress State
     private val _adminUploadState = MutableStateFlow(AdminUploadState())
     val adminUploadState: StateFlow<AdminUploadState> = _adminUploadState.asStateFlow()
+
+    // Global Loading States across screens
+    private val _isAuthLoading = MutableStateFlow(false)
+    val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
+
+    private val _isCatalogLoading = MutableStateFlow(false)
+    val isCatalogLoading: StateFlow<Boolean> = _isCatalogLoading.asStateFlow()
+
+    private val _isActionLoading = MutableStateFlow(false)
+    val isActionLoading: StateFlow<Boolean> = _isActionLoading.asStateFlow()
+
+    // In-App APK Self-Update State
+    private val _appUpdateState = MutableStateFlow<AppUpdateUiState>(AppUpdateUiState.Idle)
+    val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
 
     val movies = MovieRepository.movies
     val users = MovieRepository.users
@@ -208,14 +231,33 @@ class MovieViewModel : ViewModel() {
 
     fun setCategory(cat: MovieCategory) {
         _selectedCategory.value = cat
+        triggerBriefCatalogLoad()
     }
 
     fun setDj(dj: String?) {
         _selectedDj.value = dj
+        triggerBriefCatalogLoad()
     }
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    fun refreshCatalog() {
+        viewModelScope.launch {
+            _isCatalogLoading.value = true
+            MovieRepository.checkAndExpireVipSubscriptions()
+            delay(450)
+            _isCatalogLoading.value = false
+        }
+    }
+
+    private fun triggerBriefCatalogLoad() {
+        viewModelScope.launch {
+            _isCatalogLoading.value = true
+            delay(220)
+            _isCatalogLoading.value = false
+        }
     }
 
     fun openMovie(movie: MovieItem) {
@@ -273,29 +315,37 @@ class MovieViewModel : ViewModel() {
             _authError.value = if (_language.value == Language.SW) "Tafadhali jaza nafasi zote!" else "Veuillez remplir tous les champs !"
             return
         }
-        MovieRepository.checkAndExpireVipSubscriptions()
-        val user = MovieRepository.authenticateUser(identifier, pass)
-        if (user != null) {
-            if (user.role == UserRole.DJ && !user.hasDashboardAccess) {
-                _authError.value = if (_language.value == Language.SW)
-                    "Huna idhini ya kuingia kwenye Dashboard! Wasiliana na Admin (Yesu Kishilo) ili akupe access."
-                else
-                    "Accès refusé au Dashboard ! L'administrateur (Yesu Kishilo) doit vous accorder l'accès."
-                return
-            }
-            _currentUser.value = user
+        viewModelScope.launch {
+            _isAuthLoading.value = true
             _authError.value = null
-            MovieRepository.saveSession(loggedInUserId = user.id, hasCompletedOnboarding = true)
-            when (user.role) {
-                UserRole.ADMIN -> _currentScreen.value = ScreenState.ADMIN_DASHBOARD
-                UserRole.DJ -> _currentScreen.value = ScreenState.DJ_DASHBOARD
-                UserRole.VIEWER -> _currentScreen.value = ScreenState.MAIN_VIEWER
+            delay(350)
+            MovieRepository.checkAndExpireVipSubscriptions()
+            val user = MovieRepository.authenticateUser(identifier, pass)
+            if (user != null) {
+                if (user.role == UserRole.DJ && !user.hasDashboardAccess) {
+                    _isAuthLoading.value = false
+                    _authError.value = if (_language.value == Language.SW)
+                        "Huna idhini ya kuingia kwenye Dashboard! Wasiliana na Admin ili akupe access."
+                    else
+                        "Accès refusé au Dashboard ! L'administrateur doit vous accorder l'accès."
+                    return@launch
+                }
+                _currentUser.value = user
+                _authError.value = null
+                MovieRepository.saveSession(loggedInUserId = user.id, hasCompletedOnboarding = true)
+                _isAuthLoading.value = false
+                when (user.role) {
+                    UserRole.ADMIN -> _currentScreen.value = ScreenState.ADMIN_DASHBOARD
+                    UserRole.DJ -> _currentScreen.value = ScreenState.DJ_DASHBOARD
+                    UserRole.VIEWER -> _currentScreen.value = ScreenState.MAIN_VIEWER
+                }
+            } else {
+                _isAuthLoading.value = false
+                _authError.value = if (_language.value == Language.SW)
+                    "Taarifa za kuingia si sahihi! Angalia barua pepe na nywila yako."
+                else
+                    "Identifiants incorrects ! Vérifiez votre adresse ou mot de passe."
             }
-        } else {
-            _authError.value = if (_language.value == Language.SW)
-                "Taarifa za kuingia si sahihi! Angalia barua pepe na nywila yako."
-            else
-                "Identifiants incorrects ! Vérifiez votre adresse ou mot de passe."
         }
     }
 
@@ -318,11 +368,17 @@ class MovieViewModel : ViewModel() {
                 "Le mot de passe doit comporter au moins 8 caractères !"
             return
         }
-        val newUser = MovieRepository.registerUser(name, country, emailOrPhone, pass, ageTier, isEmailVerified)
-        _currentUser.value = newUser
-        _authError.value = null
-        MovieRepository.saveSession(loggedInUserId = newUser.id, hasCompletedOnboarding = true)
-        _currentScreen.value = ScreenState.MAIN_VIEWER
+        viewModelScope.launch {
+            _isAuthLoading.value = true
+            _authError.value = null
+            delay(350)
+            val newUser = MovieRepository.registerUser(name, country, emailOrPhone, pass, ageTier, isEmailVerified)
+            _currentUser.value = newUser
+            _authError.value = null
+            MovieRepository.saveSession(loggedInUserId = newUser.id, hasCompletedOnboarding = true)
+            _isAuthLoading.value = false
+            _currentScreen.value = ScreenState.MAIN_VIEWER
+        }
     }
 
     fun sendEmailVerificationOtp(email: String): String? {
@@ -535,7 +591,123 @@ class MovieViewModel : ViewModel() {
         return user.role == UserRole.ADMIN || (user.role == UserRole.DJ && user.hasDashboardAccess)
     }
 
-    // Admin & Authorized DJ Video File Upload with Live % Progress
+    // Real Android Device Video Import into APK App Storage with Live % Progress
+    fun adminImportPickedVideo(
+        context: Context,
+        videoUri: Uri,
+        fileName: String,
+        expectedSizeMb: Float,
+        posterUri: Uri?,
+        title: String,
+        category: MovieCategory,
+        ageRating: String,
+        descSw: String,
+        descFr: String,
+        djName: String?,
+        isVipOnly: Boolean,
+        isSeries: Boolean,
+        episodesCount: Int,
+        sendNotification: Boolean
+    ) {
+        val publisher = _currentUser.value
+        if (!canPublishMovies(publisher)) {
+            _snackbarMessage.value = if (_language.value == Language.SW)
+                "Ruhusa imekataliwa: Mtumiaji wa kawaida haruhusiwi kuweka filamu!"
+            else
+                "Accès refusé : Vous n'avez pas l'autorisation de téléverser des films !"
+            return
+        }
+        val effectiveDjName = if (publisher?.role == UserRole.DJ) {
+            publisher.djStageName ?: publisher.name
+        } else djName
+
+        val safeTotalMb = expectedSizeMb.coerceAtLeast(1f)
+        _adminUploadState.value = AdminUploadState(
+            isUploading = true,
+            progress = 0.02f,
+            percentage = 2,
+            mbUploaded = 0f,
+            totalMb = safeTotalMb,
+            speed = "Inasoma faili...",
+            fileName = fileName,
+            stageText = if (_language.value == Language.SW) "Inaanza kusoma faili kutoka Android: $fileName" else "Lecture du fichier Android : $fileName"
+        )
+
+        viewModelScope.launch {
+            try {
+                val copiedPosterUrl = if (posterUri != null) {
+                    LocalVideoFileHelper.copyPosterToAppStorage(context, posterUri) ?: ""
+                } else ""
+
+                val startTime = System.currentTimeMillis()
+                val expectedBytes = (safeTotalMb * 1024L * 1024L).toLong()
+                val internalVideoUri = LocalVideoFileHelper.copyVideoToAppStorage(
+                    context = context,
+                    sourceUri = videoUri,
+                    fileName = fileName,
+                    expectedTotalBytes = expectedBytes
+                ) { copiedBytes, totalBytes, pct ->
+                    val elapsedSec = ((System.currentTimeMillis() - startTime) / 1000f).coerceAtLeast(0.2f)
+                    val mbCopied = copiedBytes / (1024f * 1024f)
+                    val totalMbReal = totalBytes / (1024f * 1024f)
+                    val speedMb = mbCopied / elapsedSec
+                    val stage = when {
+                        pct < 40 -> if (_language.value == Language.SW) "Inahamisha faili kutoka kwenye simu ($pct%)..." else "Importation depuis le téléphone ($pct%)..."
+                        pct < 95 -> if (_language.value == Language.SW) "Inaingiza video kwenye hifadhi ya APK ($pct%)..." else "Enregistrement dans l'APK ($pct%)..."
+                        else -> if (_language.value == Language.SW) "Inakamilisha na kusajili filamu..." else "Finalisation..."
+                    }
+                    _adminUploadState.value = AdminUploadState(
+                        isUploading = true,
+                        progress = (pct / 100f).coerceIn(0f, 1f),
+                        percentage = pct,
+                        mbUploaded = mbCopied,
+                        totalMb = totalMbReal.coerceAtLeast(mbCopied),
+                        speed = "%.1f MB/s".format(speedMb),
+                        fileName = fileName,
+                        stageText = stage
+                    )
+                }
+
+                adminAddMovie(
+                    title = title,
+                    category = category,
+                    ageRating = ageRating,
+                    descSw = descSw,
+                    descFr = descFr,
+                    djName = effectiveDjName,
+                    videoUrl = internalVideoUri,
+                    isDriveLink = false,
+                    isVipOnly = isVipOnly,
+                    isSeries = isSeries,
+                    episodesCount = episodesCount,
+                    posterUrl = copiedPosterUrl,
+                    sendNotification = sendNotification,
+                    context = context
+                )
+
+                _adminUploadState.value = AdminUploadState(
+                    isUploading = false,
+                    progress = 1.0f,
+                    percentage = 100,
+                    fileName = fileName,
+                    stageText = if (_language.value == Language.SW) "Imepakiwa kwa 100% kwenye APK!" else "Importé à 100% dans l'APK !"
+                )
+
+                _snackbarMessage.value = if (_language.value == Language.SW)
+                    "Filamu '$title' imehamishwa kutoka kwenye faili la simu hadi kwenye APK!"
+                else
+                    "Film '$title' importé depuis votre téléphone dans l'APK !"
+            } catch (e: Exception) {
+                _adminUploadState.value = AdminUploadState(isUploading = false)
+                _snackbarMessage.value = if (_language.value == Language.SW)
+                    "Hitilafu wakati wa kusoma faili: ${e.message ?: "Jaribu faili lingine"}"
+                else
+                    "Erreur lors de l'importation : ${e.message ?: "Réessayez"}"
+            }
+        }
+    }
+
+    // Fallback / simulated Upload for manual filename entry
     fun adminStartUploadMovie(
         title: String,
         category: MovieCategory,
@@ -546,7 +718,9 @@ class MovieViewModel : ViewModel() {
         localFileName: String,
         isVipOnly: Boolean,
         isSeries: Boolean,
-        episodesCount: Int
+        episodesCount: Int,
+        sendNotification: Boolean = true,
+        context: Context? = null
     ) {
         val publisher = _currentUser.value
         if (!canPublishMovies(publisher)) {
@@ -574,7 +748,7 @@ class MovieViewModel : ViewModel() {
 
         viewModelScope.launch {
             for (step in 1..25) {
-                kotlinx.coroutines.delay(220)
+                kotlinx.coroutines.delay(180)
                 val newProgress = (step / 25f).coerceAtMost(1.0f)
                 val newPct = (newProgress * 100).toInt()
                 val mb = totalMb * newProgress
@@ -598,7 +772,6 @@ class MovieViewModel : ViewModel() {
                 )
             }
 
-            // Finished: add movie to repository
             adminAddMovie(
                 title = title,
                 category = category,
@@ -610,7 +783,9 @@ class MovieViewModel : ViewModel() {
                 isDriveLink = false,
                 isVipOnly = isVipOnly,
                 isSeries = isSeries,
-                episodesCount = episodesCount
+                episodesCount = episodesCount,
+                sendNotification = sendNotification,
+                context = context
             )
 
             _adminUploadState.value = AdminUploadState(
@@ -745,7 +920,10 @@ class MovieViewModel : ViewModel() {
         isDriveLink: Boolean,
         isVipOnly: Boolean,
         isSeries: Boolean,
-        episodesCount: Int
+        episodesCount: Int,
+        posterUrl: String = "",
+        sendNotification: Boolean = true,
+        context: Context? = null
     ) {
         val publisher = _currentUser.value
         if (!canPublishMovies(publisher)) {
@@ -766,8 +944,34 @@ class MovieViewModel : ViewModel() {
         } else emptyList()
 
         MovieRepository.addMovie(
-            title, category, ageRating, descSw, descFr, effectiveDjName, videoUrl, isDriveLink, isVipOnly, isSeries, episodesList
+            title = title,
+            category = category,
+            ageRating = ageRating,
+            descSw = descSw,
+            descFr = descFr,
+            djName = effectiveDjName,
+            videoUrl = videoUrl,
+            isDriveLink = isDriveLink,
+            isVipOnly = isVipOnly,
+            isSeries = isSeries,
+            episodesList = episodesList,
+            posterUrl = posterUrl
         )
+
+        if (sendNotification) {
+            val notifTitleSw = "Filamu Mpya: $title"
+            val notifTitleFr = "Nouveau Film : $title"
+            val djPart = if (!effectiveDjName.isNullOrBlank()) " (Tafsiri: $effectiveDjName)" else ""
+            val notifMsgSw = "Filamu mpya '$title'$djPart imewekwa kwenye Movie SW. Fungua utazame sasa!"
+            val notifMsgFr = "Le nouveau film '$title'$djPart est disponible sur Movie SW !"
+            MovieRepository.broadcastNotification(notifTitleSw, notifTitleFr, notifMsgSw, notifMsgFr)
+            if (context != null) {
+                val sysTitle = if (_language.value == Language.SW) notifTitleSw else notifTitleFr
+                val sysMsg = if (_language.value == Language.SW) notifMsgSw else notifMsgFr
+                AppNotificationHelper.showSystemNotification(context, sysTitle, sysMsg)
+            }
+        }
+
         _snackbarMessage.value = if (_language.value == Language.SW)
             "Filamu '$title' imechapishwa kikamilifu!"
         else
@@ -826,13 +1030,70 @@ class MovieViewModel : ViewModel() {
             "Client supprimé du système."
     }
 
-    fun adminBroadcast(titleSw: String, titleFr: String, msgSw: String, msgFr: String) {
+    fun adminBroadcast(titleSw: String, titleFr: String, msgSw: String, msgFr: String, context: Context? = null) {
         if (_currentUser.value?.role != UserRole.ADMIN) return
         if (titleSw.isBlank() || msgSw.isBlank()) return
-        MovieRepository.broadcastNotification(titleSw, titleFr, msgSw, msgFr)
-        _snackbarMessage.value = if (_language.value == Language.SW)
-            "Arifa imetumwa kwa wateja wote!"
-        else
-            "Notification envoyée à tous les spectateurs !"
+        viewModelScope.launch {
+            _isActionLoading.value = true
+            delay(350)
+            MovieRepository.broadcastNotification(titleSw, titleFr, msgSw, msgFr)
+            if (context != null) {
+                val sysTitle = if (_language.value == Language.SW) titleSw else titleFr
+                val sysMsg = if (_language.value == Language.SW) msgSw else msgFr
+                AppNotificationHelper.showSystemNotification(context, sysTitle, sysMsg)
+            }
+            _isActionLoading.value = false
+            _snackbarMessage.value = if (_language.value == Language.SW)
+                "Arifa imetumwa kwa wateja wote na kwenye mfumo wa simu!"
+            else
+                "Notification envoyée à tous les spectateurs !"
+        }
+    }
+
+    fun checkForAppUpdates() {
+        val current = _appUpdateState.value
+        if (current is AppUpdateUiState.Checking || current is AppUpdateUiState.Downloading) return
+
+        viewModelScope.launch {
+            _appUpdateState.value = AppUpdateUiState.Checking
+            try {
+                val info = AppUpdateManager.fetchUpdateInfo()
+                if (AppUpdateManager.isUpdateAvailable(info.versionCode, BuildConfig.VERSION_CODE)) {
+                    _appUpdateState.value = AppUpdateUiState.UpdateAvailable(info)
+                } else {
+                    _appUpdateState.value = AppUpdateUiState.UpToDate
+                }
+            } catch (_: Exception) {
+                _appUpdateState.value = AppUpdateUiState.Error(AppUpdateManager.ERROR_CONNECTION_MSG)
+            }
+        }
+    }
+
+    fun startAppUpdateDownload(context: Context, info: RemoteUpdateInfo) {
+        if (_appUpdateState.value is AppUpdateUiState.Downloading) return
+
+        viewModelScope.launch {
+            _appUpdateState.value = AppUpdateUiState.Downloading(
+                info = info,
+                progress = 0f,
+                percentage = 0
+            )
+            try {
+                val apkFile = AppUpdateManager.downloadApk(context, info.apkUrl) { progress, pct ->
+                    _appUpdateState.value = AppUpdateUiState.Downloading(
+                        info = info,
+                        progress = progress,
+                        percentage = pct
+                    )
+                }
+                _appUpdateState.value = AppUpdateUiState.ReadyToInstall(info, apkFile)
+                AppUpdateManager.launchApkInstaller(context, apkFile)
+            } catch (_: Exception) {
+                _appUpdateState.value = AppUpdateUiState.Error(
+                    message = AppUpdateManager.ERROR_CONNECTION_MSG,
+                    retryInfo = info
+                )
+            }
+        }
     }
 }

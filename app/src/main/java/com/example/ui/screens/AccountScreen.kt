@@ -22,9 +22,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.model.*
 import com.example.ui.theme.*
+import com.example.util.AppUpdateUiState
+import com.example.util.RemoteUpdateInfo
 import com.example.util.Strings
+import java.io.File
 
 @Composable
 fun AccountScreen(
@@ -32,13 +36,18 @@ fun AccountScreen(
     currentUser: UserAccount?,
     socialLinks: List<SocialLink>,
     sentVerifyEmailOtp: String? = null,
+    isLoading: Boolean = false,
+    appUpdateState: AppUpdateUiState = AppUpdateUiState.Idle,
     onLanguageToggle: () -> Unit,
     onSelectQuality: (VideoQuality) -> Unit,
     onVipUpgradeClick: () -> Unit,
     onAdminClick: () -> Unit,
     onLogout: () -> Unit,
     onSendEmailVerification: (String) -> Unit = {},
-    onVerifyEmail: (String) -> Boolean = { false }
+    onVerifyEmail: (String) -> Boolean = { false },
+    onCheckForUpdates: () -> Unit = {},
+    onDownloadAndInstallUpdate: (RemoteUpdateInfo) -> Unit = {},
+    onLaunchApkInstall: (File) -> Unit = {}
 ) {
     val context = LocalContext.current
     val currentQuality = currentUser?.preferredQuality ?: VideoQuality.P360
@@ -46,6 +55,19 @@ fun AccountScreen(
     val userVip = if (isVipActive) currentUser!!.vipTier else VipTier.BURE
     var showVerifyInput by remember { mutableStateOf(false) }
     var verifyCodeInput by remember { mutableStateOf("") }
+    var isVerifyingLocal by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isVerifyingLocal) {
+        if (isVerifyingLocal) {
+            kotlinx.coroutines.delay(300)
+            val ok = onVerifyEmail(verifyCodeInput)
+            isVerifyingLocal = false
+            if (ok) {
+                showVerifyInput = false
+                verifyCodeInput = ""
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -53,14 +75,37 @@ fun AccountScreen(
             .background(MovieDarkBg),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 90.dp)
     ) {
+        if (isLoading) {
+            item {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = MovieGold,
+                    trackColor = MovieSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
         // Title
         item {
-            Text(
-                text = Strings.navAccount(language),
-                fontWeight = FontWeight.Black,
-                fontSize = 24.sp,
-                color = MovieTextPrimary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = Strings.navAccount(language),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 24.sp,
+                    color = MovieTextPrimary
+                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MovieGold
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -138,6 +183,17 @@ fun AccountScreen(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Section: Mise à jour de l'application (Compte & Version)
+        item {
+            AppUpdateSectionCard(
+                appUpdateState = appUpdateState,
+                onCheckForUpdates = onCheckForUpdates,
+                onDownloadAndInstallUpdate = onDownloadAndInstallUpdate,
+                onLaunchApkInstall = onLaunchApkInstall
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -260,17 +316,22 @@ fun AccountScreen(
 
                                 Button(
                                     onClick = {
-                                        val ok = onVerifyEmail(verifyCodeInput)
-                                        if (ok) {
-                                            showVerifyInput = false
-                                            verifyCodeInput = ""
-                                        }
+                                        if (!isVerifyingLocal) isVerifyingLocal = true
                                     },
+                                    enabled = !isVerifyingLocal,
                                     colors = ButtonDefaults.buttonColors(containerColor = MovieGreenSuccess),
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.testTag("btn_confirm_account_verify")
                                 ) {
-                                    Text(if (language == Language.SW) "Thibitisha" else "Valider", fontWeight = FontWeight.Bold, color = Color.Black)
+                                    if (isVerifyingLocal) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color.Black
+                                        )
+                                    } else {
+                                        Text(if (language == Language.SW) "Thibitisha" else "Valider", fontWeight = FontWeight.Bold, color = Color.Black)
+                                    }
                                 }
                             }
                         } else {
@@ -636,6 +697,282 @@ fun AccountScreen(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MovieRedPrimary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateSectionCard(
+    appUpdateState: AppUpdateUiState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadAndInstallUpdate: (RemoteUpdateInfo) -> Unit,
+    onLaunchApkInstall: (File) -> Unit
+) {
+    val isChecking = appUpdateState is AppUpdateUiState.Checking
+    val isDownloading = appUpdateState is AppUpdateUiState.Downloading
+
+    ElevatedCard(
+        colors = CardDefaults.elevatedCardColors(containerColor = MovieCardBg),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MovieBorder, RoundedCornerShape(16.dp))
+            .testTag("account_update_card")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = MovieGold,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = "Mise à jour de l'application",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MovieTextPrimary
+                    )
+                }
+
+                Surface(
+                    color = MovieSurfaceVariant,
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = "v${BuildConfig.VERSION_NAME}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MovieGoldLight,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Version installée : ${BuildConfig.VERSION_NAME} (Code ${BuildConfig.VERSION_CODE})",
+                fontSize = 12.sp,
+                color = MovieTextSecondary,
+                modifier = Modifier.testTag("text_installed_version")
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onCheckForUpdates,
+                enabled = !isChecking && !isDownloading,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MovieRedPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("btn_check_updates")
+            ) {
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Vérification...",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Vérifier les mises à jour",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            when (appUpdateState) {
+                is AppUpdateUiState.Idle,
+                is AppUpdateUiState.Checking -> Unit
+
+                is AppUpdateUiState.UpToDate -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.testTag("text_app_up_to_date")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MovieGreenSuccess,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Votre application est à jour",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MovieGreenSuccess
+                        )
+                    }
+                }
+
+                is AppUpdateUiState.UpdateAvailable -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        color = MovieSurfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Nouvelle version disponible (${appUpdateState.info.versionName})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MovieGoldLight,
+                                modifier = Modifier.testTag("text_new_version_available")
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            FilledTonalButton(
+                                onClick = { onDownloadAndInstallUpdate(appUpdateState.info) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MovieGold,
+                                    contentColor = Color.Black
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("btn_update_now")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Mettre à jour",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                is AppUpdateUiState.Downloading -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        val label = if (appUpdateState.progress != null) {
+                            "Téléchargement : ${appUpdateState.percentage}%"
+                        } else {
+                            "Téléchargement en cours..."
+                        }
+                        Text(
+                            text = label,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MovieGoldLight
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (appUpdateState.progress != null) {
+                            LinearProgressIndicator(
+                                progress = { appUpdateState.progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .testTag("progress_update_download"),
+                                color = MovieGold,
+                                trackColor = MovieSurfaceVariant
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .testTag("progress_update_download"),
+                                color = MovieGold,
+                                trackColor = MovieSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                is AppUpdateUiState.ReadyToInstall -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FilledTonalButton(
+                        onClick = { onLaunchApkInstall(appUpdateState.apkFile) },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MovieGreenSuccess,
+                            contentColor = Color.Black
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("btn_install_apk")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.InstallMobile,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Installer la mise à jour",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+
+                is AppUpdateUiState.Error -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = appUpdateState.message,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MovieRedPrimary,
+                        modifier = Modifier.testTag("text_update_error")
+                    )
+                    if (appUpdateState.retryInfo != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { onDownloadAndInstallUpdate(appUpdateState.retryInfo) },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Text(
+                                text = "Mettre à jour",
+                                fontWeight = FontWeight.Bold,
+                                color = MovieGoldLight
                             )
                         }
                     }
