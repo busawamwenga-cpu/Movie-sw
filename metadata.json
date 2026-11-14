@@ -1,6 +1,6 @@
 {
   "name": "Movie SW",
-  "description": "App ya kutazama filamu, drama na mfululizo mtandaoni kwa Kiswahili na Kifaransa, yenye sehemu ya mtazamaji na dashboard ya admin.",
+  "description": "Watch and stream movies with role-based admin uploads, Firebase cloud sync, Media3 ExoPlayer, and in-app updates.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

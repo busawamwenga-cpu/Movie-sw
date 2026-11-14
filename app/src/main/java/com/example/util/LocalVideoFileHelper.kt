@@ -2,6 +2,7 @@ package com.example.util
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,9 @@ import java.io.FileOutputStream
 data class PickedMediaInfo(
     val uri: Uri,
     val displayName: String,
-    val sizeMb: Float
+    val sizeMb: Float,
+    val sizeBytes: Long = 0L,
+    val durationSeconds: Int = 0
 )
 
 object LocalVideoFileHelper {
@@ -24,7 +27,7 @@ object LocalVideoFileHelper {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
         } catch (_: SecurityException) {
-            // Transient picker URI permission is fine because we copy into app filesDir.
+            // Transient picker URI permission is fine because we upload or copy immediately.
         } catch (_: IllegalArgumentException) {
         }
 
@@ -50,6 +53,18 @@ object LocalVideoFileHelper {
             }
         }
 
+        var durationSeconds = 0
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, uri)
+            val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val durMs = durStr?.toLongOrNull() ?: 0L
+            durationSeconds = (durMs / 1000L).toInt().coerceAtLeast(0)
+        } catch (_: Exception) {
+        } finally {
+            runCatching { retriever.release() }
+        }
+
         val sizeMb = if (sizeBytes > 0L) {
             (sizeBytes / (1024f * 1024f)).coerceAtLeast(0.1f)
         } else {
@@ -59,7 +74,9 @@ object LocalVideoFileHelper {
         return PickedMediaInfo(
             uri = uri,
             displayName = name,
-            sizeMb = sizeMb
+            sizeMb = sizeMb,
+            sizeBytes = sizeBytes,
+            durationSeconds = durationSeconds
         )
     }
 

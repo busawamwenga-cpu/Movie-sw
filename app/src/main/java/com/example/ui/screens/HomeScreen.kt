@@ -1,92 +1,83 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.BookmarkAdded
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
-import com.example.model.*
-import com.example.ui.components.MoviePosterImage
+import com.example.model.CloudMovie
+import com.example.ui.components.CloudMovieThumbnail
 import com.example.ui.theme.*
-import com.example.util.Strings
 
 @Composable
 fun HomeScreen(
-    language: Language,
-    currentUser: UserAccount?,
-    movies: List<MovieItem>,
-    availableDjs: List<String>,
-    selectedCategory: MovieCategory,
-    selectedDj: String?,
-    isLoading: Boolean = false,
-    onRefresh: () -> Unit = {},
-    onSelectCategory: (MovieCategory) -> Unit,
-    onSelectDj: (String?) -> Unit,
-    onMovieClick: (MovieItem) -> Unit,
-    onToggleFavorite: (MovieItem) -> Unit,
-    onVipUpgradeClick: () -> Unit
+    movies: List<CloudMovie>,
+    favoriteIds: Set<String>,
+    errorMessage: String?,
+    onMovieClick: (CloudMovie) -> Unit,
+    onToggleFavorite: (CloudMovie) -> Unit
 ) {
     val featuredMovie = remember(movies) { movies.firstOrNull() }
 
-    Box(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MovieDarkBg)
+            .background(MovieDarkBg),
+        contentPadding = PaddingValues(bottom = 90.dp)
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MovieDarkBg),
-            contentPadding = PaddingValues(bottom = 90.dp)
-        ) {
-            if (isLoading) {
-                item {
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth().height(3.dp),
-                        color = MovieGold,
-                        trackColor = MovieSurfaceVariant
+        if (!errorMessage.isNullOrBlank()) {
+            item {
+                Surface(
+                    color = MovieRedPrimary.copy(alpha = 0.16f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MovieRedPrimary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = errorMessage,
+                        color = MovieRedPrimary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp)
                     )
                 }
             }
-            // 1. Featured Hero Banner
-            if (featuredMovie != null) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(340.dp)
-                            .clickable { onMovieClick(featuredMovie) }
-                    ) {
-                        // Banner Image
-                        MoviePosterImage(
-                            movie = featuredMovie,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+        }
 
-                    // Cinematic Gradient Overlay
+        if (featuredMovie != null) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .clickable { onMovieClick(featuredMovie) }
+                ) {
+                    CloudMovieThumbnail(
+                        movie = featuredMovie,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -94,15 +85,14 @@ fun HomeScreen(
                                 Brush.verticalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        MovieDarkBg.copy(alpha = 0.6f),
+                                        MovieDarkBg.copy(alpha = 0.65f),
                                         MovieDarkBg
                                     ),
-                                    startY = 100f
+                                    startY = 80f
                                 )
                             )
                     )
 
-                    // Info Content
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -114,7 +104,7 @@ fun HomeScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = Strings.featuredBadge(language),
+                                text = "LATEST MOVIE",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
@@ -126,65 +116,26 @@ fun HomeScreen(
 
                         Text(
                             text = featuredMovie.title,
-                            fontSize = 24.sp,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Black,
-                            color = MovieTextPrimary
+                            color = MovieTextPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (featuredMovie.djName != null) {
-                                Surface(
-                                    color = MovieSurfaceVariant,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = "DJ: ${featuredMovie.djName}",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MovieGoldLight,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-
-                            Surface(
-                                color = MovieSurfaceVariant,
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = featuredMovie.ageRating,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (featuredMovie.ageRating == "18+") MovieRedPrimary else MovieBlueVip,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = null,
-                                    tint = MovieGold,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "${featuredMovie.rating}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MovieTextPrimary
-                                )
-                            }
+                        if (featuredMovie.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = featuredMovie.description,
+                                fontSize = 12.sp,
+                                color = MovieTextSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Action Buttons: Watch Now & Add to Album
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -192,32 +143,28 @@ fun HomeScreen(
                             Button(
                                 onClick = { onMovieClick(featuredMovie) },
                                 colors = ButtonDefaults.buttonColors(containerColor = MovieRedPrimary),
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp)
+                                    .height(48.dp)
                                     .testTag("hero_watch_button")
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = Strings.watchNow(language),
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
+                                Text("Watch Now", fontWeight = FontWeight.Bold, color = Color.White)
                             }
 
-                            val isFav = currentUser?.favoritesMovieIds?.contains(featuredMovie.id) == true
+                            val isFav = favoriteIds.contains(featuredMovie.id)
                             OutlinedButton(
                                 onClick = { onToggleFavorite(featuredMovie) },
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = MovieSurfaceVariant.copy(alpha = 0.7f)
+                                    containerColor = MovieSurfaceVariant.copy(alpha = 0.75f)
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp)
+                                    .height(48.dp)
                                     .testTag("hero_favorite_button")
                             ) {
                                 Icon(
@@ -227,8 +174,8 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isFav) Strings.inAlbum(language) else Strings.addToAlbum(language),
-                                    fontSize = 12.sp,
+                                    text = if (isFav) "Saved" else "Save",
+                                    fontWeight = FontWeight.Bold,
                                     color = if (isFav) MovieGold else MovieTextPrimary
                                 )
                             }
@@ -238,257 +185,80 @@ fun HomeScreen(
             }
         }
 
-        // 2. VIP Alert Banner for Bure / Expired Users
-        if (currentUser?.isVipActive() != true) {
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Movies",
+                fontWeight = FontWeight.Bold,
+                fontSize = 19.sp,
+                color = MovieTextPrimary,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        if (movies.isEmpty()) {
             item {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(MovieRedDark, MovieSurfaceVariant)
-                            )
-                        )
-                        .clickable { onVipUpgradeClick() }
-                        .padding(14.dp)
+                        .padding(horizontal = 24.dp, vertical = 48.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = MovieGoldLight,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Column {
-                                Text(
-                                    text = if (language == Language.SW) "Faili za Admin: Zimefungwa (VIP Tu)" else "Fichiers Admin : Verrouillés (Réservé VIP)",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = if (language == Language.SW) "Boresha kuwa VIP Pro kupakua na kufungua zote." else "Passez à VIP Pro pour débloquer.",
-                                    fontSize = 11.sp,
-                                    color = MovieTextSecondary
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = onVipUpgradeClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "VIP $3.99",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color.Black
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Category Filter Chips
-        item {
-            Column(modifier = Modifier.padding(top = 12.dp)) {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(MovieCategory.values()) { category ->
-                        val isSelected = selectedCategory == category
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { onSelectCategory(category) },
-                            label = {
-                                Text(
-                                    text = if (language == Language.SW) category.nameSw else category.nameFr,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MovieRedPrimary,
-                                selectedLabelColor = Color.White,
-                                containerColor = MovieSurfaceVariant,
-                                labelColor = MovieTextSecondary
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = if (isSelected) MovieRedPrimary else MovieBorder
-                            )
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4. Ma-DJ Filter Row (Dubbed Translators)
-        item {
-            Column(modifier = Modifier.padding(top = 16.dp)) {
-                Text(
-                    text = Strings.djSectionTitle(language),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MovieTextPrimary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item {
-                        DjPill(
-                            name = if (language == Language.SW) "Wote (All)" else "Tous",
-                            isSelected = selectedDj == null,
-                            onClick = { onSelectDj(null) }
-                        )
-                    }
-                    items(availableDjs) { dj ->
-                        DjPill(
-                            name = dj,
-                            isSelected = selectedDj == dj,
-                            onClick = { onSelectDj(if (selectedDj == dj) null else dj) }
-                        )
-                    }
-                }
-            }
-        }
-
-        // 5. Movies Grid / List Section
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (language == Language.SW) "Filamu Zinazopatikana" else "Films Disponibles",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = MovieTextPrimary
-                )
-                IconButton(
-                    onClick = onRefresh,
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MovieGold
-                        )
-                    } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = MovieGoldLight,
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.Default.Movie,
+                            contentDescription = null,
+                            tint = MovieTextSecondary,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No movies yet",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = MovieTextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Movies added by an admin will appear here.",
+                            fontSize = 13.sp,
+                            color = MovieTextSecondary
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // Movie cards in rows of 2
-        val chunkedMovies = movies.chunked(2)
-        items(chunkedMovies) { pair ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                for (movie in pair) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        MovieCard(
-                            movie = movie,
-                            currentUser = currentUser,
-                            language = language,
-                            onClick = { onMovieClick(movie) }
-                        )
+        } else {
+            val chunked = movies.chunked(2)
+            items(chunked) { pair ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    for (movie in pair) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            CloudMovieCard(
+                                movie = movie,
+                                onClick = { onMovieClick(movie) }
+                            )
+                        }
+                    }
+                    if (pair.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
-                if (pair.size == 1) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
             }
-        }
-    }
-    }
-}
-
-@Composable
-fun DjPill(
-    name: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        color = if (isSelected) MovieGold else MovieSurfaceVariant,
-        shape = RoundedCornerShape(20.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) MovieGold else MovieBorder),
-        modifier = Modifier
-            .clickable { onClick() }
-            .testTag("dj_pill_$name")
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(if (isSelected) Color.Black else MovieDarkBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = if (isSelected) Color.Black else MovieGoldLight,
-                    modifier = Modifier.size(12.dp)
-                )
-            }
-            Text(
-                text = name,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isSelected) Color.Black else MovieTextPrimary
-            )
         }
     }
 }
 
 @Composable
-fun MovieCard(
-    movie: MovieItem,
-    currentUser: UserAccount?,
-    language: Language,
+fun CloudMovieCard(
+    movie: CloudMovie,
     onClick: () -> Unit
 ) {
-    val isLocked = movie.isVipOnly && (currentUser?.isVipActive() != true)
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -502,131 +272,44 @@ fun MovieCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
+                    .height(168.dp)
             ) {
-                MoviePosterImage(
+                CloudMovieThumbnail(
                     movie = movie,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
-
-                // Age rating badge
-                Surface(
-                    color = if (movie.ageRating == "18+") MovieRedPrimary else MovieBlueVip,
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                ) {
-                    Text(
-                        text = movie.ageRating,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Lock overlay if VIP Only and user is Free
-                if (isLocked) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "VIP Locked",
-                                tint = MovieGold,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Surface(
-                                color = MovieGold,
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = "VIP ONLY",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.Black,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Rating Pill at Bottom End
-                Surface(
-                    color = MovieDarkBg.copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = MovieGold,
-                            modifier = Modifier.size(11.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = "${movie.rating}",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MovieTextPrimary
-                        )
-                    }
-                }
             }
 
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
                     text = movie.title,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     color = MovieTextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
                 Spacer(modifier = Modifier.height(4.dp))
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (movie.djName != null) {
+                    Text(
+                        text = movie.formattedDate(),
+                        fontSize = 11.sp,
+                        color = MovieTextSecondary,
+                        maxLines = 1
+                    )
+                    if (movie.durationSeconds > 0) {
                         Text(
-                            text = "DJ: ${movie.djName}",
+                            text = movie.formattedDuration(),
                             fontSize = 11.sp,
                             color = MovieGoldLight,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    } else {
-                        Text(
-                            text = movie.category.nameSw,
-                            fontSize = 11.sp,
-                            color = MovieTextSecondary
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
-
-                    Text(
-                        text = if (movie.isSeries) "Series" else "${movie.durationMinutes}m",
-                        fontSize = 10.sp,
-                        color = MovieTextSecondary
-                    )
                 }
             }
         }

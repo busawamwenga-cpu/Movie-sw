@@ -43,7 +43,7 @@ sealed interface AppUpdateUiState {
 object AppUpdateManager {
     const val UPDATE_JSON_URL =
         "https://raw.githubusercontent.com/busawamwenga-cpu/Movie-sw/main/update.json"
-    const val ERROR_CONNECTION_MSG = "Impossible de vérifier. Vérifiez votre connexion."
+    const val ERROR_CONNECTION_MSG = "Check failed. Please check your connection."
 
     private val moshi: Moshi by lazy { Moshi.Builder().build() }
     private val updateAdapter by lazy { moshi.adapter(RemoteUpdateInfo::class.java) }

@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.time.Duration
 
 plugins {
   alias(libs.plugins.android.application)
@@ -70,6 +71,14 @@ android {
   }
 }
 
+tasks.withType<Test> {
+  failFast = true
+  timeout.set(Duration.ofMinutes(2))
+  testLogging {
+    events("passed", "failed", "skipped")
+  }
+}
+
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
 // to match the convention used in Web projects.
 secrets {
@@ -106,26 +115,26 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
-  implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
-
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
-  implementation(libs.firebase.appcheck.recaptcha)
-  implementation(libs.firebase.appcheck.debug)
+  // implementation(libs.converter.moshi)
+  // implementation(libs.firebase.ai)
+  implementation(libs.firebase.firestore)
+  implementation(libs.firebase.storage)
+  implementation(libs.firebase.auth)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.googleid)
+  implementation(libs.androidx.media3.exoplayer)
+  implementation(libs.androidx.media3.ui)
+  // implementation(libs.firebase.appcheck.recaptcha)
+  // implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.logging.interceptor)
+  implementation(libs.kotlinx.coroutines.play.services)
+  // implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
-  implementation(libs.retrofit)
+  // implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

@@ -17,16 +17,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.model.Language
-import com.example.model.NotificationItem
+import com.example.model.CloudMovie
 import com.example.ui.theme.*
-import com.example.util.Strings
 
 @Composable
 fun NotificationsDialog(
-    language: Language,
-    notifications: List<NotificationItem>,
-    onDismiss: () -> Unit
+    recentMovies: List<CloudMovie>,
+    onDismiss: () -> Unit,
+    onMovieClick: (CloudMovie) -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -37,9 +35,7 @@ fun NotificationsDialog(
                 .fillMaxWidth()
                 .padding(vertical = 20.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -56,7 +52,7 @@ fun NotificationsDialog(
                             modifier = Modifier.size(22.dp)
                         )
                         Text(
-                            text = Strings.notificationsTitle(language),
+                            text = "Latest Movies",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
                             color = MovieTextPrimary
@@ -64,7 +60,7 @@ fun NotificationsDialog(
                     }
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -76,15 +72,15 @@ fun NotificationsDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                if (notifications.isEmpty()) {
+                if (recentMovies.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 32.dp),
+                            .padding(vertical = 28.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = Strings.noNotifications(language),
+                            text = "No new notifications right now.",
                             color = MovieTextSecondary,
                             fontSize = 14.sp
                         )
@@ -93,41 +89,49 @@ fun NotificationsDialog(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 380.dp),
+                            .heightIn(max = 360.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(notifications) { notif ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MovieCardBg)
-                                    .padding(12.dp)
+                        items(recentMovies.take(8)) { movie ->
+                            Surface(
+                                onClick = {
+                                    onDismiss()
+                                    onMovieClick(movie)
+                                },
+                                color = MovieCardBg,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = if (language == Language.SW) notif.titleSw else notif.titleFr,
+                                            text = "New movie: ${movie.title}",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp,
-                                            color = MovieTextPrimary
+                                            color = MovieTextPrimary,
+                                            modifier = Modifier.weight(1f)
                                         )
                                         Text(
-                                            text = notif.timeAgo,
+                                            text = movie.formattedDate(),
                                             fontSize = 10.sp,
                                             color = MovieGoldLight
                                         )
                                     }
-                                    Text(
-                                        text = if (language == Language.SW) notif.messageSw else notif.messageFr,
-                                        fontSize = 12.sp,
-                                        color = MovieTextSecondary,
-                                        lineHeight = 16.sp
-                                    )
+                                    if (movie.description.isNotBlank()) {
+                                        Text(
+                                            text = movie.description,
+                                            fontSize = 12.sp,
+                                            color = MovieTextSecondary,
+                                            maxLines = 2
+                                        )
+                                    }
                                 }
                             }
                         }

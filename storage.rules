@@ -1,0 +1,13 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /movies/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write, delete: if request.auth != null && (
+        (request.auth.token.email == 'busawamwenga@gmail.com' &&
+         request.auth.token.email_verified == true) ||
+        firestore.get(/databases/ai-studio-android-moviesw-3661e8be-1922-4c76-ba5d-052e08a10ac7/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+  }
+}

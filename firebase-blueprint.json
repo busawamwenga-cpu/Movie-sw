@@ -1,0 +1,141 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account stored in Firestore with role-based access control and version status.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Authentication user UID."
+        },
+        "email": {
+          "type": "string",
+          "description": "User Google email address."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name shown in the app."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "admin"],
+          "description": "Authorization role: user or admin."
+        },
+        "appVersionCode": {
+          "type": "integer",
+          "description": "Installed app versionCode reported on login."
+        },
+        "isLocked": {
+          "type": "boolean",
+          "description": "Whether an admin has locked this account."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "displayName",
+        "role",
+        "appVersionCode",
+        "isLocked",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudMovie": {
+      "title": "CloudMovie",
+      "description": "Movie entry stored in Firestore pointing to video media in Firebase Storage.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Required movie title."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional movie description."
+        },
+        "videoUrl": {
+          "type": "string",
+          "description": "Streaming video URL from Firebase Storage or external link."
+        },
+        "storagePath": {
+          "type": "string",
+          "description": "Firebase Storage object path (e.g., movies/{movieId}.mp4)."
+        },
+        "thumbnailUrl": {
+          "type": "string",
+          "description": "Thumbnail image URL."
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original video file name."
+        },
+        "fileSizeBytes": {
+          "type": "integer",
+          "description": "Video file size in bytes."
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "description": "Video duration in seconds."
+        },
+        "category": {
+          "type": "string",
+          "description": "Movie category ID."
+        },
+        "isVipOnly": {
+          "type": "boolean",
+          "description": "Whether the movie is marked VIP."
+        },
+        "uploadedBy": {
+          "type": "string",
+          "description": "UID of the admin who uploaded the movie."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when saved (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "videoUrl",
+        "storagePath",
+        "thumbnailUrl",
+        "uploadedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores user profile, role ('user' or 'admin'), appVersionCode, and lock state."
+    },
+    "/movies/{movieId}": {
+      "schema": {
+        "$ref": "#/entities/CloudMovie"
+      },
+      "description": "Stores movie metadata and Firebase Storage paths; readable by signed-in users, writable only by admins."
+    }
+  }
+}

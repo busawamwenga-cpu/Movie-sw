@@ -7,76 +7,89 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.model.Language
-import com.example.model.UserRole
+import com.example.data.MovieRepository
 import com.example.ui.components.AppBottomNav
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.NotificationsDialog
 import com.example.ui.components.OfflineGateScreen
-import com.example.ui.components.VipUpgradeDialog
 import com.example.ui.screens.*
-import com.example.ui.theme.MovieDarkBg
-import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.*
+import com.example.util.GoogleAuthHelper
 import com.example.util.NetworkMonitor
-import com.example.viewmodel.AuthMode
-import com.example.viewmodel.MovieViewModel
-import com.example.viewmodel.ScreenState
+import com.example.viewmodel.CloudMovieViewModel
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        com.example.data.MovieRepository.initialize(applicationContext)
+        MovieRepository.initialize(applicationContext)
         enableEdgeToEdge()
 
         setContent {
             MyApplicationTheme {
-                MovieSwApp()
+                MovieSwApp(activity = this)
             }
         }
     }
 }
 
+private fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
+    trySend(currentUser)
+    val listener = FirebaseAuth.AuthStateListener { auth ->
+        trySend(auth.currentUser)
+    }
+    addAuthStateListener(listener)
+    awaitClose { removeAuthStateListener(listener) }
+}
+
 @Composable
-fun MovieSwApp(
-    viewModel: MovieViewModel = viewModel()
-) {
+fun MovieSwApp(activity: ComponentActivity) {
     val context = LocalContext.current
-    val language by viewModel.language.collectAsStateWithLifecycle()
-    val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
-    val authMode by viewModel.authMode.collectAsStateWithLifecycle()
-    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
-    val bottomNavTab by viewModel.bottomNavTab.collectAsStateWithLifecycle()
-    val selectedMovie by viewModel.selectedMovie.collectAsStateWithLifecycle()
-    val filteredMovies by viewModel.filteredMovies.collectAsStateWithLifecycle()
-    val allMovies by viewModel.movies.collectAsStateWithLifecycle()
-    val availableDjs by viewModel.availableDjs.collectAsStateWithLifecycle()
-    val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
-    val selectedDj by viewModel.selectedDj.collectAsStateWithLifecycle()
-    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val showVipModal by viewModel.showVipModal.collectAsStateWithLifecycle()
-    val showNotificationDialog by viewModel.showNotificationDialog.collectAsStateWithLifecycle()
-    val authError by viewModel.authError.collectAsStateWithLifecycle()
-    val snackbarMsg by viewModel.snackbarMessage.collectAsStateWithLifecycle()
-    val comments by viewModel.comments.collectAsStateWithLifecycle()
-    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
-    val socialLinks by viewModel.socialLinks.collectAsStateWithLifecycle()
-    val users by viewModel.users.collectAsStateWithLifecycle()
-    val sentOtpCode by viewModel.sentOtpCode.collectAsStateWithLifecycle()
-    val otpTargetEmail by viewModel.otpTargetEmail.collectAsStateWithLifecycle()
-    val sentVerifyEmailOtp by viewModel.sentVerifyEmailOtp.collectAsStateWithLifecycle()
-    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
-    val adminUploadState by viewModel.adminUploadState.collectAsStateWithLifecycle()
-    val isAuthLoading by viewModel.isAuthLoading.collectAsStateWithLifecycle()
-    val isCatalogLoading by viewModel.isCatalogLoading.collectAsStateWithLifecycle()
-    val isActionLoading by viewModel.isActionLoading.collectAsStateWithLifecycle()
-    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
-    val publishedAppUpdate by viewModel.publishedAppUpdate.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    val firebaseUser by remember { Firebase.auth.authStateFlow() }
+        .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+
+    var isSigningIn by remember { mutableStateOf(false) }
+    var loginError by remember { mutableStateOf<String?>(null) }
+    var autoSignInAttempted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (Firebase.auth.currentUser == null && !autoSignInAttempted) {
+            autoSignInAttempted = true
+            isSigningIn = true
+            val result = GoogleAuthHelper.attemptAutoSignIn(activity)
+            isSigningIn = false
+            result.onFailure { err ->
+                if (err !is GoogleAuthHelper.SignInCancelledException) {
+                    // Silent auto-sign-in failure simply leaves the Login screen ready
+                }
+            }
+        }
+    }
 
     var networkRetryTick by remember { mutableIntStateOf(0) }
     val observedOnline by NetworkMonitor.observeIsOnline(context)
@@ -86,6 +99,91 @@ fun MovieSwApp(
         isOnline = observedOnline || NetworkMonitor.isInternetAvailable(context)
     }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MovieDarkBg)
+    ) {
+        val signedInUser = firebaseUser
+        if (signedInUser == null) {
+            LoginScreen(
+                isLoading = isSigningIn,
+                errorMessage = loginError,
+                onGoogleSignInClick = {
+                    if (!isSigningIn) {
+                        scope.launch {
+                            isSigningIn = true
+                            loginError = null
+                            val result = GoogleAuthHelper.signInWithGoogle(activity)
+                            isSigningIn = false
+                            result.onFailure { err ->
+                                if (err !is GoogleAuthHelper.SignInCancelledException) {
+                                    loginError = err.message ?: "Sign-in failed. Please try again."
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        } else {
+            key(signedInUser.uid) {
+                val app = context.applicationContext as android.app.Application
+                val cloudViewModel: CloudMovieViewModel = viewModel(
+                    key = "cloud_${signedInUser.uid}",
+                    factory = CloudMovieViewModel.Factory(
+                        application = app,
+                        uid = signedInUser.uid,
+                        email = signedInUser.email ?: "",
+                        displayName = signedInUser.displayName ?: "",
+                        isEmailVerified = signedInUser.isEmailVerified
+                    )
+                )
+                AuthenticatedAppContent(
+                    viewModel = cloudViewModel,
+                    onLogout = {
+                        scope.launch {
+                            GoogleAuthHelper.signOut(context)
+                        }
+                    }
+                )
+            }
+        }
+
+        if (!isOnline) {
+            OfflineGateScreen(
+                onRetry = {
+                    isOnline = NetworkMonitor.isInternetAvailable(context)
+                    networkRetryTick++
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AuthenticatedAppContent(
+    viewModel: CloudMovieViewModel,
+    onLogout: () -> Unit
+) {
+    val context = LocalContext.current
+    val userProfile by viewModel.currentProfile.collectAsStateWithLifecycle()
+    val isProfileLoading by viewModel.isProfileLoading.collectAsStateWithLifecycle()
+    val profileError by viewModel.profileError.collectAsStateWithLifecycle()
+    val moviesError by viewModel.moviesError.collectAsStateWithLifecycle()
+    val movies by viewModel.movies.collectAsStateWithLifecycle()
+    val filteredMovies by viewModel.filteredMovies.collectAsStateWithLifecycle()
+    val allUsers by viewModel.allUsers.collectAsStateWithLifecycle()
+    val bottomNavTab by viewModel.bottomNavTab.collectAsStateWithLifecycle()
+    val selectedMovie by viewModel.selectedMovie.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
+    val comments by viewModel.comments.collectAsStateWithLifecycle()
+    val showNotifications by viewModel.showNotifications.collectAsStateWithLifecycle()
+    val snackbarMsg by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val uploadState by viewModel.uploadState.collectAsStateWithLifecycle()
+    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+
+    val isAdmin = userProfile?.isAdmin == true
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(snackbarMsg) {
@@ -95,21 +193,147 @@ fun MovieSwApp(
         }
     }
 
-    // Modal dialogs
-    if (showVipModal) {
-        VipUpgradeDialog(
-            language = language,
-            currentUser = currentUser,
-            onDismiss = { viewModel.showVipModal(false) },
-            onSelectPlan = { tier -> viewModel.upgradeVip(tier) }
-        )
+    if (isProfileLoading && userProfile == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MovieDarkBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = MovieRedPrimary)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Loading your account...",
+                    color = MovieTextSecondary,
+                    fontSize = 14.sp
+                )
+            }
+        }
+        return
     }
 
-    if (showNotificationDialog) {
+    if (profileError != null && userProfile == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MovieDarkBg)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = MovieSurface,
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MovieBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = profileError ?: "Unable to load profile.",
+                        color = MovieRedPrimary,
+                        textAlign = TextAlign.Center,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onLogout,
+                        colors = ButtonDefaults.buttonColors(containerColor = MovieRedPrimary)
+                    ) {
+                        Text("Log out", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        return
+    }
+
+    // Account Lock Enforcement
+    if (userProfile?.isLocked == true) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MovieDarkBg)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = MovieSurface,
+                shape = RoundedCornerShape(18.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MovieRedPrimary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = MovieRedPrimary,
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Account Locked",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MovieTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Your account has been locked by an administrator. Please update the app or contact support.",
+                        fontSize = 13.sp,
+                        color = MovieTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Button(
+                        onClick = { viewModel.checkForAppUpdates(context) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MovieGold),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Check for updates", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onLogout,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Log out", color = MovieTextPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        return
+    }
+
+    // Full-screen Media3 Video Player
+    val activeMovie = selectedMovie
+    if (activeMovie != null) {
+        BackHandler {
+            viewModel.closePlayer()
+        }
+        VideoPlayerScreen(
+            movie = activeMovie,
+            isFavorite = favoriteIds.contains(activeMovie.id),
+            comments = comments.filter { it.movieId == activeMovie.id },
+            onBack = { viewModel.closePlayer() },
+            onToggleFavorite = { viewModel.toggleFavorite(activeMovie.id) },
+            onPostComment = { text -> viewModel.postComment(activeMovie.id, text) }
+        )
+        return
+    }
+
+    if (showNotifications) {
         NotificationsDialog(
-            language = language,
-            notifications = notifications,
-            onDismiss = { viewModel.showNotifications(false) }
+            recentMovies = movies,
+            onDismiss = { viewModel.showNotifications(false) },
+            onMovieClick = { viewModel.openMovie(it) }
         )
     }
 
@@ -118,26 +342,21 @@ fun MovieSwApp(
         containerColor = MovieDarkBg,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (currentScreen == ScreenState.MAIN_VIEWER) {
-                AppTopBar(
-                    language = language,
-                    currentUser = currentUser,
-                    unreadNotificationsCount = notifications.size,
-                    onLanguageToggle = { viewModel.toggleLanguage() },
-                    onNotificationsClick = { viewModel.showNotifications(true) },
-                    onVipClick = { viewModel.showVipModal(true) },
-                    onAdminClick = { viewModel.navigateTo(ScreenState.ADMIN_DASHBOARD) }
-                )
-            }
+            AppTopBar(
+                isAdmin = isAdmin,
+                unreadNotificationsCount = movies.size.coerceAtMost(9),
+                onNotificationsClick = { viewModel.showNotifications(true) },
+                onAdminClick = {
+                    if (isAdmin) viewModel.selectTab("admin")
+                }
+            )
         },
         bottomBar = {
-            if (currentScreen == ScreenState.MAIN_VIEWER) {
-                AppBottomNav(
-                    selectedTab = bottomNavTab,
-                    language = language,
-                    onTabSelected = { viewModel.setBottomNavTab(it) }
-                )
-            }
+            AppBottomNav(
+                selectedTab = bottomNavTab,
+                isAdmin = isAdmin,
+                onTabSelected = { viewModel.selectTab(it) }
+            )
         }
     ) { innerPadding ->
         Box(
@@ -146,333 +365,67 @@ fun MovieSwApp(
                 .padding(innerPadding)
                 .background(MovieDarkBg)
         ) {
-            when (currentScreen) {
-                ScreenState.SPLASH -> {
-                    SplashScreen(
-                        language = language,
-                        onFinish = { viewModel.onSplashFinished() }
-                    )
-                }
+            when (bottomNavTab) {
+                "home" -> HomeScreen(
+                    movies = movies,
+                    favoriteIds = favoriteIds,
+                    errorMessage = moviesError,
+                    onMovieClick = { viewModel.openMovie(it) },
+                    onToggleFavorite = { viewModel.toggleFavorite(it.id) }
+                )
 
-                ScreenState.ONBOARDING -> {
-                    OnboardingScreen(
-                        language = language,
-                        onLanguageToggle = { viewModel.toggleLanguage() },
-                        onFinish = { viewModel.completeOnboarding() }
-                    )
-                }
+                "explore" -> ExploreScreen(
+                    movies = filteredMovies,
+                    searchQuery = searchQuery,
+                    onSearchChange = { viewModel.setSearchQuery(it) },
+                    onMovieClick = { viewModel.openMovie(it) }
+                )
 
-                ScreenState.BIENVENUE -> {
-                    BienvenueScreen(
-                        language = language,
-                        onLanguageToggle = { viewModel.toggleLanguage() },
-                        onSignUpClick = { viewModel.setAuthMode(AuthMode.SIGN_UP) },
-                        onSignInClick = { viewModel.setAuthMode(AuthMode.SIGN_IN) }
-                    )
-                }
+                "album" -> AlbumScreen(
+                    allMovies = movies,
+                    favoriteIds = favoriteIds,
+                    onMovieClick = { viewModel.openMovie(it) },
+                    onRemoveFavorite = { viewModel.toggleFavorite(it.id) }
+                )
 
-                ScreenState.AUTH -> {
-                    BackHandler {
-                        viewModel.navigateTo(ScreenState.BIENVENUE)
-                    }
-                    AuthScreen(
-                        language = language,
-                        authMode = authMode,
-                        errorMessage = authError,
-                        sentOtpCode = sentOtpCode,
-                        otpTargetEmail = otpTargetEmail,
-                        sentVerifyEmailOtp = sentVerifyEmailOtp,
-                        isLoading = isAuthLoading,
-                        onSwitchMode = { viewModel.setAuthMode(it) },
-                        onBack = { viewModel.navigateTo(ScreenState.BIENVENUE) },
-                        onLogin = { id, pass -> viewModel.login(id, pass) },
-                        onRegister = { name, country, email, pass, ageTier, isVerified ->
-                            viewModel.register(name, country, email, pass, ageTier, isVerified)
-                        },
-                        onSendOtp = { viewModel.sendPasswordResetOtp(it) },
-                        onResetPassword = { email, code, pass ->
-                            viewModel.verifyOtpAndResetPassword(email, code, pass)
-                        },
-                        onSendVerifyEmailOtp = { viewModel.sendEmailVerificationOtp(it) }
-                    )
-                }
+                "account" -> AccountScreen(
+                    userProfile = userProfile,
+                    appUpdateState = appUpdateState,
+                    onCheckForUpdates = { viewModel.checkForAppUpdates(context) },
+                    onDownloadAndInstallUpdate = { info -> viewModel.startAppUpdateDownload(context, info) },
+                    onLaunchApkInstall = { file -> com.example.util.AppUpdateManager.launchApkInstaller(context, file) },
+                    onLogout = onLogout
+                )
 
-                ScreenState.MAIN_VIEWER -> {
-                    when (bottomNavTab) {
-                        "home" -> HomeScreen(
-                            language = language,
-                            currentUser = currentUser,
-                            movies = filteredMovies,
-                            availableDjs = availableDjs,
-                            selectedCategory = selectedCategory,
-                            selectedDj = selectedDj,
-                            isLoading = isCatalogLoading,
-                            onRefresh = { viewModel.refreshCatalog() },
-                            onSelectCategory = { viewModel.setCategory(it) },
-                            onSelectDj = { viewModel.setDj(it) },
-                            onMovieClick = { viewModel.openMovie(it) },
-                            onToggleFavorite = { viewModel.toggleFavorite(it) },
-                            onVipUpgradeClick = { viewModel.showVipModal(true) }
-                        )
-
-                        "explore" -> ExploreScreen(
-                            language = language,
-                            currentUser = currentUser,
-                            movies = filteredMovies,
-                            availableDjs = availableDjs,
-                            selectedCategory = selectedCategory,
-                            selectedDj = selectedDj,
-                            searchQuery = searchQuery,
-                            isLoading = isCatalogLoading,
-                            onSearchChange = { viewModel.setSearchQuery(it) },
-                            onSelectCategory = { viewModel.setCategory(it) },
-                            onSelectDj = { viewModel.setDj(it) },
-                            onMovieClick = { viewModel.openMovie(it) }
-                        )
-
-                        "album" -> AlbumScreen(
-                            language = language,
-                            currentUser = currentUser,
-                            allMovies = allMovies,
-                            activeDownloads = activeDownloads,
-                            isLoading = isCatalogLoading,
-                            onMovieClick = { viewModel.openMovie(it) },
-                            onRemoveFavorite = { viewModel.toggleFavorite(it) },
-                            onVipUpgradeClick = { viewModel.showVipModal(true) }
-                        )
-
-                        "account" -> AccountScreen(
-                            language = language,
-                            currentUser = currentUser,
-                            socialLinks = socialLinks,
-                            sentVerifyEmailOtp = sentVerifyEmailOtp,
-                            isLoading = isActionLoading,
-                            appUpdateState = appUpdateState,
-                            onLanguageToggle = { viewModel.toggleLanguage() },
-                            onSelectQuality = { viewModel.updateQuality(it) },
-                            onVipUpgradeClick = { viewModel.showVipModal(true) },
-                            onAdminClick = { viewModel.navigateTo(ScreenState.ADMIN_DASHBOARD) },
-                            onLogout = { viewModel.logout() },
-                            onSendEmailVerification = { viewModel.sendEmailVerificationOtp(it) },
-                            onVerifyEmail = { viewModel.verifyCurrentUserEmail(it) },
-                            onCheckForUpdates = { viewModel.checkForAppUpdates(context) },
-                            onDownloadAndInstallUpdate = { info -> viewModel.startAppUpdateDownload(context, info) },
-                            onLaunchApkInstall = { file -> com.example.util.AppUpdateManager.launchApkInstaller(context, file) }
-                        )
-                    }
-                }
-
-                ScreenState.VIDEO_PLAYER -> {
-                    selectedMovie?.let { movie ->
-                        BackHandler {
-                            viewModel.closePlayer()
-                        }
-                        VideoPlayerScreen(
-                            movie = movie,
-                            language = language,
-                            currentUser = currentUser,
-                            comments = comments,
-                            activeDownloads = activeDownloads,
-                            onBack = { viewModel.closePlayer() },
-                            onToggleFavorite = { viewModel.toggleFavorite(it) },
-                            onDownload = { viewModel.downloadMovie(it) },
-                            onPostComment = { text, rating -> viewModel.addComment(movie.id, text, rating) },
-                            onVipUpgradeClick = { viewModel.showVipModal(true) }
-                        )
-                    }
-                }
-
-                ScreenState.ADMIN_DASHBOARD -> {
-                    // SECURITY CHECK: Mutumiyaji wa kawaida aruusiwi ku weka movie atakama awe na vip pro max ila admin pekeyake!
-                    if (currentUser?.role != UserRole.ADMIN) {
-                        LaunchedEffect(Unit) {
-                            viewModel.showSnackbar(
-                                if (language == Language.SW) "Ruhusa imekataliwa: Mtumiaji wa kawaida haruhusiwi kuingia hapa!" 
-                                else "Accès refusé : Seul l'administrateur peut accéder ici !"
-                            )
-                            viewModel.navigateTo(if (currentUser != null) ScreenState.MAIN_VIEWER else ScreenState.BIENVENUE)
-                        }
-                    } else {
-                        BackHandler {
-                            viewModel.navigateTo(ScreenState.MAIN_VIEWER)
-                        }
+                "admin" -> {
+                    if (isAdmin) {
                         AdminDashboardScreen(
-                            language = language,
-                            users = users,
-                            movies = allMovies,
-                            socialLinks = socialLinks,
-                            adminUploadState = adminUploadState,
-                            publishedAppUpdate = publishedAppUpdate,
-                            isActionLoading = isActionLoading,
-                            onPublishApkUpdate = { uri, fileName, sizeMb, directUrl, vCode, vName, notes ->
-                                viewModel.adminPublishApkUpdate(
-                                    context = context,
-                                    apkUri = uri,
-                                    fileName = fileName,
-                                    expectedSizeMb = sizeMb,
-                                    directApkUrl = directUrl,
-                                    versionCode = vCode,
-                                    versionName = vName,
-                                    releaseNotes = notes
-                                )
-                            },
-                            onClearPublishedApkUpdate = { viewModel.adminClearPublishedApkUpdate() },
-                            onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount, sendNotif ->
-                                viewModel.adminAddMovie(
-                                    title = title,
-                                    category = cat,
-                                    ageRating = age,
-                                    descSw = descSw,
-                                    descFr = descFr,
-                                    djName = dj,
-                                    videoUrl = url,
-                                    isDriveLink = isDrive,
-                                    isVipOnly = isVip,
-                                    isSeries = isSeries,
-                                    episodesCount = epCount,
-                                    sendNotification = sendNotif,
-                                    context = context
-                                )
-                            },
-                            onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount, sendNotif ->
-                                viewModel.adminStartUploadMovie(
-                                    title = title,
-                                    category = cat,
-                                    ageRating = age,
-                                    descSw = descSw,
-                                    descFr = descFr,
-                                    djName = dj,
-                                    localFileName = file,
-                                    isVipOnly = isVip,
-                                    isSeries = isSeries,
-                                    episodesCount = epCount,
-                                    sendNotification = sendNotif,
-                                    context = context
-                                )
-                            },
-                            onImportPickedVideo = { uri, fileName, sizeMb, posterUri, title, cat, age, descSw, descFr, dj, isVip, isSeries, epCount, sendNotif ->
-                                viewModel.adminImportPickedVideo(
+                            currentAdminUid = userProfile?.uid ?: "",
+                            movies = movies,
+                            users = allUsers,
+                            uploadState = uploadState,
+                            onUploadMovie = { uri, fileName, sizeBytes, durationSec, title, desc ->
+                                viewModel.uploadMovie(
                                     context = context,
                                     videoUri = uri,
                                     fileName = fileName,
-                                    expectedSizeMb = sizeMb,
-                                    posterUri = posterUri,
+                                    fileSizeBytes = sizeBytes,
+                                    durationSeconds = durationSec,
                                     title = title,
-                                    category = cat,
-                                    ageRating = age,
-                                    descSw = descSw,
-                                    descFr = descFr,
-                                    djName = dj,
-                                    isVipOnly = isVip,
-                                    isSeries = isSeries,
-                                    episodesCount = epCount,
-                                    sendNotification = sendNotif
+                                    description = desc
                                 )
                             },
-                            onDeleteMovie = { movieId -> viewModel.adminDeleteMovie(movieId) },
-                            onChangeUserVip = { userId, tier -> viewModel.adminChangeUserVip(userId, tier) },
-                            onDeleteUser = { userId -> viewModel.adminDeleteUser(userId) },
-                            onBroadcastNotif = { tSw, tFr, mSw, mFr -> viewModel.adminBroadcast(tSw, tFr, mSw, mFr, context) },
-                            onCreateDjAccount = { name, email, pass, stage, country, access ->
-                                viewModel.createDjAccount(name, email, pass, stage, country, access)
-                            },
-                            onToggleDjAccess = { userId, hasAccess -> viewModel.toggleDjAccess(userId, hasAccess) },
-                            onCancelUserVip = { userId -> viewModel.cancelUserVip(userId) },
-                            onRenewUserVip = { userId, tier -> viewModel.renewUserVip(userId, tier) },
-                            onLanguageToggle = { viewModel.toggleLanguage() },
-                            onExitAdmin = { viewModel.navigateTo(ScreenState.MAIN_VIEWER) }
+                            onClearUploadFeedback = { viewModel.clearUploadFeedback() },
+                            onDeleteMovie = { viewModel.deleteMovie(it) },
+                            onToggleUserRole = { viewModel.toggleUserRole(it) },
+                            onToggleUserLock = { viewModel.toggleUserLock(it) },
+                            onLockOutdatedUsers = { viewModel.lockOutdatedUsers(it) }
                         )
-                    }
-                }
-
-                ScreenState.DJ_DASHBOARD -> {
-                    val user = currentUser
-                    if (user?.role != UserRole.DJ || !user.hasDashboardAccess) {
-                        LaunchedEffect(user) {
-                            viewModel.showSnackbar(
-                                if (language == Language.SW)
-                                    "Access imefungwa: Wasiliana na Admin kupata idhini ya DJ Dashboard."
-                                else
-                                    "Accès refusé : Demandez l'accès à l'administrateur."
-                            )
-                            viewModel.navigateTo(if (user != null) ScreenState.MAIN_VIEWER else ScreenState.BIENVENUE)
-                        }
                     } else {
-                        DjDashboardScreen(
-                            language = language,
-                            currentDj = user,
-                            allMovies = allMovies,
-                            uploadState = adminUploadState,
-                            onLanguageToggle = { viewModel.toggleLanguage() },
-                            onAddMovie = { title, cat, age, descSw, descFr, dj, url, isDrive, isVip, isSeries, epCount ->
-                                viewModel.adminAddMovie(
-                                    title = title,
-                                    category = cat,
-                                    ageRating = age,
-                                    descSw = descSw,
-                                    descFr = descFr,
-                                    djName = dj,
-                                    videoUrl = url,
-                                    isDriveLink = isDrive,
-                                    isVipOnly = isVip,
-                                    isSeries = isSeries,
-                                    episodesCount = epCount,
-                                    sendNotification = true,
-                                    context = context
-                                )
-                            },
-                            onStartUploadMovie = { title, cat, age, descSw, descFr, dj, file, isVip, isSeries, epCount ->
-                                viewModel.adminStartUploadMovie(
-                                    title = title,
-                                    category = cat,
-                                    ageRating = age,
-                                    descSw = descSw,
-                                    descFr = descFr,
-                                    djName = dj,
-                                    localFileName = file,
-                                    isVipOnly = isVip,
-                                    isSeries = isSeries,
-                                    episodesCount = epCount,
-                                    sendNotification = true,
-                                    context = context
-                                )
-                            },
-                            onImportPickedVideo = { uri, fileName, sizeMb, posterUri, title, cat, age, descSw, descFr, dj, isVip, isSeries, epCount, sendNotif ->
-                                viewModel.adminImportPickedVideo(
-                                    context = context,
-                                    videoUri = uri,
-                                    fileName = fileName,
-                                    expectedSizeMb = sizeMb,
-                                    posterUri = posterUri,
-                                    title = title,
-                                    category = cat,
-                                    ageRating = age,
-                                    descSw = descSw,
-                                    descFr = descFr,
-                                    djName = dj,
-                                    isVipOnly = isVip,
-                                    isSeries = isSeries,
-                                    episodesCount = epCount,
-                                    sendNotification = sendNotif
-                                )
-                            },
-                            onDeleteMovie = { movieId -> viewModel.adminDeleteMovie(movieId) },
-                            onLogout = { viewModel.logout() }
-                        )
+                        LaunchedEffect(Unit) { viewModel.selectTab("home") }
                     }
                 }
             }
         }
-    }
-
-    // Strict online enforcement: block offline app usage once Splash completes
-    if (!isOnline && currentScreen != ScreenState.SPLASH) {
-        OfflineGateScreen(
-            language = language,
-            onRetry = {
-                isOnline = NetworkMonitor.isInternetAvailable(context)
-                networkRetryTick++
-            }
-        )
     }
 }

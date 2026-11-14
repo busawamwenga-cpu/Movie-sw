@@ -25,7 +25,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun OfflineGateScreen(
-    language: Language,
+    language: Language = Language.SW,
     onRetry: () -> Unit
 ) {
     var isChecking by remember { mutableStateOf(false) }
@@ -75,10 +75,7 @@ fun OfflineGateScreen(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = if (language == Language.SW)
-                        "Hakuna Muunganisho wa Intaneti"
-                    else
-                        "Pas de connexion Internet",
+                    text = "No Internet Connection",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Black,
                     color = MovieTextPrimary,
@@ -88,10 +85,7 @@ fun OfflineGateScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = if (language == Language.SW)
-                        "Movie SW ni app ya mtandaoni. Tafadhali washa Wi-Fi au Data yako ya simu ili kuendelea kutumia APK."
-                    else
-                        "Movie SW nécessite une connexion Internet active (Wi-Fi ou données mobiles) pour fonctionner.",
+                    text = "Movie SW requires an active internet connection (Wi-Fi or mobile data) to stream and load movies.",
                     fontSize = 13.sp,
                     color = MovieTextSecondary,
                     textAlign = TextAlign.Center,
@@ -118,7 +112,7 @@ fun OfflineGateScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (language == Language.SW) "Inakagua mtandao..." else "Vérification...",
+                            text = "Checking connection...",
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
@@ -130,7 +124,7 @@ fun OfflineGateScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (language == Language.SW) "Jaribu Tena" else "Réessayer",
+                            text = "Try Again",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = Color.White
